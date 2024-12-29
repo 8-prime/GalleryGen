@@ -1,0 +1,37 @@
+﻿body {
+    font-family: Verdana, Geneva, Tahoma, sans-serif;
+    width: 100vw;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+img {
+    object-fit: contain;
+    height: auto;
+    width: 100%;
+}
+
+.images-container {
+    display: flex;
+    flex-direction: column;
+}
+
+.three-column-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.two-column-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+}
+
+.one-column-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
