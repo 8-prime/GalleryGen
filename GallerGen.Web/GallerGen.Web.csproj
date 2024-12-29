@@ -4,9 +4,11 @@
         <TargetFramework>net8.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
+        <UserSecretsId>2e7e7d0c-7335-4b8d-b188-255966aa7fdd</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="BlazorTemplater" Version="1.5.1" />
       <PackageReference Include="SixLabors.ImageSharp" Version="3.1.6" />
     </ItemGroup>
 

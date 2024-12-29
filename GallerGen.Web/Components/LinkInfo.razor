@@ -1,0 +1,18 @@
+﻿<div class="info">
+    <h1>@Name</h1>
+    <div style="padding-top: 1rem">
+        <a href="/" class="text-lg">Home</a>
+        <p style="padding-top: 0.5rem">Collections</p>
+        <div class="link-collection">
+            @foreach (var collection in Collections)
+            {
+                <a href="@collection">@collection</a>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Name { get; set; } = null!;
+    [Parameter] public List<string> Collections { get; set; } = [];    
+}

@@ -1,0 +1,27 @@
+﻿@using GallerGen.Web.Models
+
+<div class="images-container">
+    <h2>@Collection.CollectionName</h2>
+    @foreach (var group in Collection.ImageGroups)
+    {
+        <div class="@GetClassForType(group.Type)">
+            @foreach (var image in group.Images)
+            {
+                <img src="@image" alt="An image"/>
+            }
+        </div>
+    }
+</div>
+
+
+@code {
+    [Parameter] public CollectionInfo Collection { get; set; } = null!;
+
+    private static string GetClassForType(ImageGroupType type) => type switch
+    {
+        ImageGroupType.Landscape => "three-column-grid",
+        ImageGroupType.Portrait => "two-column-grid ",
+        ImageGroupType.Panorama => "one-column-grid ",
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
+    };
+}

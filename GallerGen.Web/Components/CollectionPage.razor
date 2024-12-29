@@ -1,0 +1,23 @@
+﻿@using GallerGen.Web.Models
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>@Collection.CollectionName</title>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <base href="/"/>
+    <link rel="stylesheet" href="style.css"/>
+</head>
+
+<body>
+</body>
+<LinkInfo Collections="Collections" Name="@Name"></LinkInfo>
+<ImageDisplay Collection="Collection"></ImageDisplay>
+</html>
+
+@code {
+    [Parameter] public List<string> Collections { get; set; } = [];
+    [Parameter] public CollectionInfo Collection { get; set; } = null!;
+    [Parameter] public string Name { get; set; } = null!;
+}
