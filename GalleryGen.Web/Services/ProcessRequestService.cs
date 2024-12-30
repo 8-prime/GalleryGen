@@ -1,6 +1,6 @@
 ﻿using System.Threading.Channels;
 
-namespace GallerGen.Web.Services;
+namespace GalleryGen.Web.Services;
 
 public class ProcessRequestService
 {

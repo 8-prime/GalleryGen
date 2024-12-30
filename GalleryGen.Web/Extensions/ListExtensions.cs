@@ -1,4 +1,4 @@
-﻿namespace GallerGen.Web.Extensions;
+﻿namespace GalleryGen.Web.Extensions;
 
 public static class ListExtensions
 {

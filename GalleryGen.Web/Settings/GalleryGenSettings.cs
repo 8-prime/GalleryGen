@@ -1,4 +1,4 @@
-﻿namespace GallerGen.Web.Settings;
+﻿namespace GalleryGen.Web.Settings;
 
 public class GalleryGenSettings
 {

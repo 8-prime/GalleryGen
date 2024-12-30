@@ -1,4 +1,4 @@
-﻿@using GallerGen.Web.Models
+﻿@using GalleryGen.Web.Models
 
 <div class="images-container">
     <h2>@Collection.CollectionName</h2>
@@ -20,8 +20,8 @@
     private static string GetClassForType(ImageGroupType type) => type switch
     {
         ImageGroupType.Landscape => "three-column-grid",
-        ImageGroupType.Portrait => "two-column-grid ",
-        ImageGroupType.Panorama => "one-column-grid ",
+        ImageGroupType.Portrait => "two-column-grid",
+        ImageGroupType.Panorama => "one-column-grid",
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };
 }

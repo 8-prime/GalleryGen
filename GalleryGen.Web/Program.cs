@@ -1,6 +1,6 @@
-using GallerGen.Web.BackgroundServices;
-using GallerGen.Web.Services;
-using GallerGen.Web.Settings;
+using GalleryGen.Web.BackgroundServices;
+using GalleryGen.Web.Services;
+using GalleryGen.Web.Settings;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 

@@ -1,4 +1,4 @@
-﻿namespace GallerGen.Web.Models;
+﻿namespace GalleryGen.Web.Models;
 
 public enum ImageGroupType
 {

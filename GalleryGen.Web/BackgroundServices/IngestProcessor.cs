@@ -1,14 +1,13 @@
 ﻿using BlazorTemplater;
-using GallerGen.Web.Components;
-using GallerGen.Web.Extensions;
-using GallerGen.Web.Models;
-using GallerGen.Web.Services;
-using GallerGen.Web.Settings;
+using GalleryGen.Web.Components;
+using GalleryGen.Web.Extensions;
+using GalleryGen.Web.Models;
+using GalleryGen.Web.Services;
+using GalleryGen.Web.Settings;
+using ImageMagick;
 using Microsoft.Extensions.Options;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Webp;
 
-namespace GallerGen.Web.BackgroundServices;
+namespace GalleryGen.Web.BackgroundServices;
 
 public class IngestProcessor(ProcessRequestService processRequestService, IOptions<GalleryGenSettings> settings)
     : BackgroundService
@@ -102,15 +101,22 @@ public class IngestProcessor(ProcessRequestService processRequestService, IOptio
     private async Task ConvertAndSaveFile(string directoryPath, string file,
         Dictionary<ImageGroupType, List<string>> typedImages, CancellationToken stoppingToken)
     {
-        using var image = await Image.LoadAsync(file, stoppingToken);
-        var outputPath = Path.ChangeExtension(Path.Join(directoryPath, Path.GetFileName(file)), "webp");
-        await image.SaveAsync(outputPath, new WebpEncoder()
+        using var image = new MagickImage(file);
+        image.Quality = 75; //this is the default for libwebp
+        if (image.Width > image.Height)
         {
-            Quality = 80,
-            FileFormat = WebpFileFormatType.Lossy,
-        }, cancellationToken: stoppingToken);
-        var aspect = (float)image.Width / (float)image.Height;
-        var htmlImagePath = Path.Join(directoryPath, Path.GetFileName(outputPath));
+            image.Resize(1000, 0);
+        }
+        else
+        {
+            image.Resize(0, 1000);
+        }
+        image.Format = MagickFormat.WebP;
+        var outputFileName = Path.ChangeExtension(Path.Join(directoryPath, Path.GetFileName(file)), "webp");
+        await image.WriteAsync(outputFileName, stoppingToken);    
+        
+        var aspect = image.Width / (float)image.Height;
+        var htmlImagePath = Path.Join(Path.GetFileName(directoryPath), Path.GetFileName(outputFileName));
         switch (aspect)
         {
             case > 1.9f:

@@ -1,4 +1,4 @@
-﻿using GallerGen.Web.Models;
+﻿using GalleryGen.Web.Models;
 
 namespace GallerGen.Web.Services;
 

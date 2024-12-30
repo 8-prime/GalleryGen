@@ -1,7 +1,7 @@
-﻿using GallerGen.Web.Settings;
+﻿using GalleryGen.Web.Settings;
 using Microsoft.Extensions.Options;
 
-namespace GallerGen.Web.BackgroundServices;
+namespace GalleryGen.Web.BackgroundServices;
 
 public class FileWatcherService(IOptions<GalleryGenSettings> options) : BackgroundService
 {

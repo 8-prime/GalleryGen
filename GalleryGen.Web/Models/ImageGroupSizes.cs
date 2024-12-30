@@ -1,4 +1,4 @@
-﻿namespace GallerGen.Web.Models;
+﻿namespace GalleryGen.Web.Models;
 
 public static class ImageGroupSizes
 {
@@ -6,6 +6,6 @@ public static class ImageGroupSizes
     {
         { ImageGroupType.Landscape, 3 },
         { ImageGroupType.Portrait, 2 },
-        { ImageGroupType.Landscape, 1 },
+        { ImageGroupType.Panorama, 1 },
     };
 }
