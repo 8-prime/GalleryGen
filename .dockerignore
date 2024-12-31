@@ -1,0 +1,71 @@
+# Ignore .NET Core build output
+bin/
+obj/
+
+# Ignore user-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Ignore OS-specific files
+Thumbs.db
+*.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# Ignore npm package files (if using Node.js tools)
+node_modules/
+
+# Ignore logs and local debug files
+*.log
+.vscode/
+.idea/
+.vscode/
+.vs/
+
+# Ignore test results
+TestResults/
+*.TestResults/
+
+# Ingore node folder
+**/node_modules/
+
+# Ignore other hidden directories and files
+**/[Tt]est[Rr]esults/
+**/[Bb]uild[Ll]ogs/
+**/[Ll]og[Dd]etail[Tt]ext[Ff]iles/
+
+# Ignore build artifacts
+**/[Dd]ebug/
+**/[Rr]elease/
+
+# Ignore packages folder (if using NuGet packages folder)
+packages/
+
+# Ignore configuration files
+appsettings.Development.json
+secrets.json
+
+# Ignore publish output
+publish/
+out/
+
+# Ignore coverage reports
+coverage/
+*.coverage
+*.coveragexml
+*.opencover.xml
+
+# Ignore lock files
+project.lock.json
+project.fragment.lock.json
+
+# Ignore Rider files
+.idea/
+
+# Ignore local Dockerfiles
+Dockerfile*

@@ -7,7 +7,7 @@
         <div class="@GetClassForType(group.Type)">
             @foreach (var image in group.Images)
             {
-                <img src="@image" alt="An image"/>
+                <img src="@image" alt="An image" loading="lazy"/>
             }
         </div>
     }

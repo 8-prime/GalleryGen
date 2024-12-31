@@ -98,18 +98,18 @@ public class IngestProcessor(ProcessRequestService processRequestService, IOptio
         return info;
     }
 
-    private async Task ConvertAndSaveFile(string directoryPath, string file,
+    private static async Task ConvertAndSaveFile(string directoryPath, string file,
         Dictionary<ImageGroupType, List<string>> typedImages, CancellationToken stoppingToken)
     {
         using var image = new MagickImage(file);
-        image.Quality = 75; //this is the default for libwebp
+        image.Quality = 100;
         if (image.Width > image.Height)
         {
-            image.Resize(1000, 0);
+            image.Resize(Math.Min(1000, image.Width), 0);
         }
         else
         {
-            image.Resize(0, 1000);
+            image.Resize(0, Math.Min(1000, image.Height));
         }
         image.Format = MagickFormat.WebP;
         var outputFileName = Path.ChangeExtension(Path.Join(directoryPath, Path.GetFileName(file)), "webp");
@@ -129,7 +129,7 @@ public class IngestProcessor(ProcessRequestService processRequestService, IOptio
                 images.Add(htmlImagePath);
                 break;
             }
-            case < 1.0f:
+            case < 1.1f:
             {
                 if (!typedImages.TryGetValue(ImageGroupType.Portrait, out var images))
                 {
