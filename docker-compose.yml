@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gallery
+      POSTGRES_PASSWORD: gallery
+      POSTGRES_DB: gallery
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gallery"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gallery:gallery@postgres:5432/gallery?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - images_data:/data/images
+    restart: unless-stopped
+
+  imgproxy:
+    image: darthsim/imgproxy:latest
+    environment:
+      IMGPROXY_KEY: ${IMGPROXY_KEY}
+      IMGPROXY_SALT: ${IMGPROXY_SALT}
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /data/images
+      IMGPROXY_USE_ETAG: "true"
+      IMGPROXY_MAX_SRC_RESOLUTION: 50
+    volumes:
+      - images_data:/data/images:ro
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./web/dist:/usr/share/nginx/html/app:ro
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      - api
+      - imgproxy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  images_data:
+  nginx_cache:

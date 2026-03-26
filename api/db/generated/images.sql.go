@@ -1,0 +1,105 @@
+package generated
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+const createImage = `-- name: CreateImage :one
+INSERT INTO images (user_id, storage_key, filename, mime_type, width, height, size_bytes)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at`
+
+type CreateImageParams struct {
+	UserID     pgtype.UUID `json:"user_id"`
+	StorageKey string      `json:"storage_key"`
+	Filename   string      `json:"filename"`
+	MimeType   string      `json:"mime_type"`
+	Width      pgtype.Int4 `json:"width"`
+	Height     pgtype.Int4 `json:"height"`
+	SizeBytes  pgtype.Int8 `json:"size_bytes"`
+}
+
+func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) (Image, error) {
+	row := q.db.QueryRow(ctx, createImage,
+		arg.UserID, arg.StorageKey, arg.Filename, arg.MimeType,
+		arg.Width, arg.Height, arg.SizeBytes,
+	)
+	var i Image
+	err := row.Scan(
+		&i.ID, &i.UserID, &i.StorageKey, &i.Filename, &i.MimeType,
+		&i.Width, &i.Height, &i.SizeBytes, &i.CreatedAt,
+	)
+	return i, err
+}
+
+const getImagesByUserID = `-- name: GetImagesByUserID :many
+SELECT id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at FROM images WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
+
+type GetImagesByUserIDParams struct {
+	UserID pgtype.UUID `json:"user_id"`
+	Limit  int32       `json:"limit"`
+	Offset int32       `json:"offset"`
+}
+
+func (q *Queries) GetImagesByUserID(ctx context.Context, arg GetImagesByUserIDParams) ([]Image, error) {
+	rows, err := q.db.Query(ctx, getImagesByUserID, arg.UserID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Image
+	for rows.Next() {
+		var i Image
+		if err := rows.Scan(
+			&i.ID, &i.UserID, &i.StorageKey, &i.Filename, &i.MimeType,
+			&i.Width, &i.Height, &i.SizeBytes, &i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	return items, rows.Err()
+}
+
+const countImagesByUserID = `-- name: CountImagesByUserID :one
+SELECT COUNT(*) FROM images WHERE user_id = $1`
+
+func (q *Queries) CountImagesByUserID(ctx context.Context, userID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countImagesByUserID, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getImageByID = `-- name: GetImageByID :one
+SELECT id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at FROM images WHERE id = $1 AND user_id = $2`
+
+type GetImageByIDParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) GetImageByID(ctx context.Context, arg GetImageByIDParams) (Image, error) {
+	row := q.db.QueryRow(ctx, getImageByID, arg.ID, arg.UserID)
+	var i Image
+	err := row.Scan(
+		&i.ID, &i.UserID, &i.StorageKey, &i.Filename, &i.MimeType,
+		&i.Width, &i.Height, &i.SizeBytes, &i.CreatedAt,
+	)
+	return i, err
+}
+
+const deleteImage = `-- name: DeleteImage :exec
+DELETE FROM images WHERE id = $1 AND user_id = $2`
+
+type DeleteImageParams struct {
+	ID     pgtype.UUID `json:"id"`
+	UserID pgtype.UUID `json:"user_id"`
+}
+
+func (q *Queries) DeleteImage(ctx context.Context, arg DeleteImageParams) error {
+	_, err := q.db.Exec(ctx, deleteImage, arg.ID, arg.UserID)
+	return err
+}
