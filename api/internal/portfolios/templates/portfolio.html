@@ -15,9 +15,15 @@
             }
 
             header {
-              padding: 2rem 2rem 1rem;
+              padding: 1.25rem 2rem;
               max-width: 1400px;
               margin: 0 auto;
+            }
+
+            .header-row {
+              display: flex;
+              align-items: flex-end;
+              gap: 2rem;
             }
 
             h1 {
@@ -25,6 +31,12 @@
               font-weight: 600;
               letter-spacing: 0.05em;
               text-transform: uppercase;
+              flex-shrink: 0;
+            }
+
+            h1 a {
+              color: #000;
+              text-decoration: none;
             }
 
             .description {
@@ -36,24 +48,20 @@
             nav.tabs {
               display: flex;
               gap: 0;
-              margin-top: 1.5rem;
-              border-bottom: 1px solid #222;
             }
 
             nav.tabs a {
-              padding: 0.5rem 1.25rem;
-              color: #666;
+              padding: 0.25rem 0.75rem;
+              color: #000;
               text-decoration: none;
               font-size: 0.85rem;
               letter-spacing: 0.05em;
               text-transform: uppercase;
-              border-bottom: 2px solid transparent;
-              margin-bottom: -1px;
-              transition: color 0.15s, border-color 0.15s;
+              transition: color 0.15s;
             }
 
-            nav.tabs a:hover { color: #ccc; }
-            nav.tabs a.active { color: #e5e5e5; border-bottom-color: #e5e5e5; }
+            nav.tabs a:hover { color: #555; }
+            nav.tabs a.active { color: #000; font-weight: 700; }
 
             .page-section { display: none; padding: 1rem 2rem 2rem; max-width: 1400px; margin: 0 auto; }
             .page-section.active { display: block; }
@@ -103,20 +111,27 @@
     </head>
     <body>
         <header>
-            <h1>{{.Title}}</h1>
+            <div class="header-row">
+                <h1>
+                    <a
+                        id="title-link"
+                        href="#page-{{(index .Pages 0).Slug}}"
+                        data-page="{{(index .Pages 0).Slug}}"
+                        >{{.Title}}</a
+                    >
+                </h1>
+                {{if gt (len .Pages) 1}}
+                <nav class="tabs" id="tabs">
+                    {{range $i, $page := .Pages}}{{if gt $i 0}}
+                    <a href="#page-{{$page.Slug}}" data-page="{{$page.Slug}}"
+                        >{{$page.Title}}</a
+                    >
+                    {{end}}{{end}}
+                </nav>
+                {{end}}
+            </div>
             {{if .Description}}
             <p class="description">{{.Description}}</p>
-            {{end}} {{if gt (len .Pages) 1}}
-            <nav class="tabs" id="tabs">
-                {{range $i, $page := .Pages}}
-                <a
-                    href="#page-{{$page.Slug}}"
-                    data-page="{{$page.Slug}}"
-                    class="{{if eq $i 0}}active{{end}}"
-                    >{{$page.Title}}</a
-                >
-                {{end}}
-            </nav>
             {{end}}
         </header>
 
@@ -144,9 +159,9 @@
         <script>
             (function () {
                 var tabs = document.getElementById("tabs");
-                if (!tabs) return;
-                var links = tabs.querySelectorAll("a[data-page]");
+                var titleLink = document.getElementById("title-link");
                 var sections = document.querySelectorAll(".page-section");
+                var links = tabs ? tabs.querySelectorAll("a[data-page]") : [];
 
                 function show(slug) {
                     links.forEach(function (l) {
@@ -161,13 +176,27 @@
                 var hash = location.hash.replace("#page-", "");
                 if (hash) show(hash);
 
-                tabs.addEventListener("click", function (e) {
-                    var link = e.target.closest("a[data-page]");
-                    if (!link) return;
-                    e.preventDefault();
-                    history.pushState(null, "", "#page-" + link.dataset.page);
-                    show(link.dataset.page);
-                });
+                if (tabs) {
+                    tabs.addEventListener("click", function (e) {
+                        var link = e.target.closest("a[data-page]");
+                        if (!link) return;
+                        e.preventDefault();
+                        history.pushState(
+                            null,
+                            "",
+                            "#page-" + link.dataset.page,
+                        );
+                        show(link.dataset.page);
+                    });
+                }
+
+                if (titleLink) {
+                    titleLink.addEventListener("click", function (e) {
+                        e.preventDefault();
+                        history.pushState(null, "", location.pathname);
+                        show(titleLink.dataset.page);
+                    });
+                }
 
                 window.addEventListener("popstate", function () {
                     var h = location.hash.replace("#page-", "");
