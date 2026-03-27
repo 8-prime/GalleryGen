@@ -73,6 +73,16 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	user, err := h.queries.GetUserByID(r.Context(), userID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	if !user.CanCreatePortfolio {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "not permitted to create portfolios"})
+		return
+	}
+
 	var body struct {
 		Title       string  `json:"title"`
 		Description *string `json:"description"`
@@ -146,6 +156,17 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
 		return
+	}
+	if body.Published {
+		updateUser, err := h.queries.GetUserByID(r.Context(), userID)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+		if !updateUser.CanPublishPortfolio {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "not permitted to publish portfolios"})
+			return
+		}
 	}
 	if body.Title == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "title is required"})

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
-import { clearTokens } from '../lib/auth'
+import { clearTokens, getCurrentUser } from '../lib/auth'
 import { createPortfolio, deletePortfolio, slugify, type Portfolio } from '../lib/portfolios'
 
 export function Dashboard() {
@@ -16,6 +16,11 @@ export function Dashboard() {
   const { data: portfolios = [], isLoading } = useQuery({
     queryKey: ['portfolios'],
     queryFn: () => api.get('portfolios').json<Portfolio[]>(),
+  })
+
+  const { data: currentUser } = useQuery({
+    queryKey: ['currentUser'],
+    queryFn: getCurrentUser,
   })
 
   function handleLogout() {
@@ -51,12 +56,22 @@ export function Dashboard() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-900">GalleryGen</h1>
-        <button
-          onClick={handleLogout}
-          className="text-sm text-gray-600 hover:text-gray-900"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-4">
+          {currentUser?.is_admin && (
+            <button
+              onClick={() => navigate('/app/admin')}
+              className="text-sm text-gray-600 hover:text-gray-900"
+            >
+              Admin
+            </button>
+          )}
+          <button
+            onClick={handleLogout}
+            className="text-sm text-gray-600 hover:text-gray-900"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
       <main className="max-w-4xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-6">

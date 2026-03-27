@@ -69,6 +69,27 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"access_token": access, "refresh_token": refresh})
 }
 
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+	userIDStr, ok := GetUserID(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	user, err := h.svc.GetCurrentUser(r.Context(), userIDStr)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":                   user.ID.String(),
+		"email":                user.Email,
+		"plan":                 user.Plan,
+		"is_admin":             user.IsAdmin,
+		"can_create_portfolio": user.CanCreatePortfolio,
+		"can_publish_portfolio": user.CanPublishPortfolio,
+	})
+}
+
 // OAuthRedirect and OAuthCallback are stubs for Phase 1
 func (h *Handler) OAuthRedirect(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, map[string]string{"error": "oauth not configured"})

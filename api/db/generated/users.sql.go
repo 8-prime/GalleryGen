@@ -14,7 +14,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash)
 VALUES ($1, $2)
-RETURNING id, email, password_hash, plan, stripe_customer_id, created_at
+RETURNING id, email, password_hash, plan, stripe_customer_id, created_at, is_admin, can_create_portfolio, can_publish_portfolio
 `
 
 type CreateUserParams struct {
@@ -32,12 +32,15 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Plan,
 		&i.StripeCustomerID,
 		&i.CreatedAt,
+		&i.IsAdmin,
+		&i.CanCreatePortfolio,
+		&i.CanPublishPortfolio,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, plan, stripe_customer_id, created_at FROM users WHERE email = $1
+SELECT id, email, password_hash, plan, stripe_customer_id, created_at, is_admin, can_create_portfolio, can_publish_portfolio FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error) {
@@ -50,12 +53,15 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Plan,
 		&i.StripeCustomerID,
 		&i.CreatedAt,
+		&i.IsAdmin,
+		&i.CanCreatePortfolio,
+		&i.CanPublishPortfolio,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, plan, stripe_customer_id, created_at FROM users WHERE id = $1
+SELECT id, email, password_hash, plan, stripe_customer_id, created_at, is_admin, can_create_portfolio, can_publish_portfolio FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error) {
@@ -68,6 +74,90 @@ func (q *Queries) GetUserByID(ctx context.Context, id pgtype.UUID) (User, error)
 		&i.Plan,
 		&i.StripeCustomerID,
 		&i.CreatedAt,
+		&i.IsAdmin,
+		&i.CanCreatePortfolio,
+		&i.CanPublishPortfolio,
+	)
+	return i, err
+}
+
+const listAllUsers = `-- name: ListAllUsers :many
+SELECT id, email, password_hash, plan, stripe_customer_id, created_at, is_admin, can_create_portfolio, can_publish_portfolio FROM users ORDER BY created_at DESC
+`
+
+func (q *Queries) ListAllUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.Query(ctx, listAllUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.PasswordHash,
+			&i.Plan,
+			&i.StripeCustomerID,
+			&i.CreatedAt,
+			&i.IsAdmin,
+			&i.CanCreatePortfolio,
+			&i.CanPublishPortfolio,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setUserAdmin = `-- name: SetUserAdmin :exec
+UPDATE users SET is_admin = TRUE WHERE email = $1
+`
+
+func (q *Queries) SetUserAdmin(ctx context.Context, email string) error {
+	_, err := q.db.Exec(ctx, setUserAdmin, email)
+	return err
+}
+
+const updateUserPermissions = `-- name: UpdateUserPermissions :one
+UPDATE users
+SET is_admin = $2,
+    can_create_portfolio = $3,
+    can_publish_portfolio = $4
+WHERE id = $1
+RETURNING id, email, password_hash, plan, stripe_customer_id, created_at, is_admin, can_create_portfolio, can_publish_portfolio
+`
+
+type UpdateUserPermissionsParams struct {
+	ID                  pgtype.UUID `json:"id"`
+	IsAdmin             bool        `json:"is_admin"`
+	CanCreatePortfolio  bool        `json:"can_create_portfolio"`
+	CanPublishPortfolio bool        `json:"can_publish_portfolio"`
+}
+
+func (q *Queries) UpdateUserPermissions(ctx context.Context, arg UpdateUserPermissionsParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserPermissions,
+		arg.ID,
+		arg.IsAdmin,
+		arg.CanCreatePortfolio,
+		arg.CanPublishPortfolio,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Plan,
+		&i.StripeCustomerID,
+		&i.CreatedAt,
+		&i.IsAdmin,
+		&i.CanCreatePortfolio,
+		&i.CanPublishPortfolio,
 	)
 	return i, err
 }

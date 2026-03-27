@@ -15,12 +15,40 @@ import (
 
 	"github.com/galleryGen/api/db"
 	"github.com/galleryGen/api/db/generated"
+	"github.com/galleryGen/api/internal/admin"
 	"github.com/galleryGen/api/internal/auth"
 	"github.com/galleryGen/api/internal/config"
 	"github.com/galleryGen/api/internal/images"
 	"github.com/galleryGen/api/internal/portfolios"
 	"github.com/galleryGen/api/migrations"
+	"github.com/jackc/pgx/v5/pgtype"
+	"golang.org/x/crypto/bcrypt"
 )
+
+func ensureAdminUser(ctx context.Context, q *generated.Queries, cfg *config.Config) {
+	if cfg.AdminEmail == "" || cfg.AdminPassword == "" {
+		return
+	}
+	_, err := q.GetUserByEmail(ctx, cfg.AdminEmail)
+	if err != nil {
+		hash, err := bcrypt.GenerateFromPassword([]byte(cfg.AdminPassword), 12)
+		if err != nil {
+			slog.Error("failed to hash admin password", "err", err)
+			return
+		}
+		if _, err = q.CreateUser(ctx, generated.CreateUserParams{
+			Email:        cfg.AdminEmail,
+			PasswordHash: pgtype.Text{String: string(hash), Valid: true},
+		}); err != nil {
+			slog.Error("failed to create admin user", "err", err)
+			return
+		}
+		slog.Info("created admin user", "email", cfg.AdminEmail)
+	}
+	if err := q.SetUserAdmin(ctx, cfg.AdminEmail); err != nil {
+		slog.Error("failed to set admin flag", "email", cfg.AdminEmail, "err", err)
+	}
+}
 
 // statusWriter wraps ResponseWriter to capture the status code for logging.
 type statusWriter struct {
@@ -91,8 +119,11 @@ func main() {
 
 	queries := generated.New(pool)
 
+	ensureAdminUser(ctx, queries, cfg)
+
 	authSvc := auth.NewService(queries, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authSvc)
+	adminHandler := admin.NewHandler(queries)
 	portfolioHandler := portfolios.NewHandler(queries)
 
 	imgproxyCfg := &images.ImgproxyConfig{
@@ -139,6 +170,7 @@ func main() {
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.Middleware(cfg.JWTSecret))
+			r.Get("/auth/me", authHandler.Me)
 			r.Route("/portfolios", func(r chi.Router) {
 				portfolioHandler.RegisterRoutes(r)
 			})
@@ -147,6 +179,11 @@ func main() {
 				r.Post("/", imageHandler.Upload)
 				r.Get("/{id}/raw", imageHandler.ServeRaw)
 				r.Delete("/{id}", imageHandler.Delete)
+			})
+			r.Route("/admin", func(r chi.Router) {
+				r.Use(adminHandler.AdminOnly)
+				r.Get("/users", adminHandler.ListUsers)
+				r.Patch("/users/{id}", adminHandler.UpdateUserPermissions)
 			})
 		})
 	})

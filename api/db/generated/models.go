@@ -61,10 +61,13 @@ type Portfolio struct {
 }
 
 type User struct {
-	ID               pgtype.UUID        `json:"id"`
-	Email            string             `json:"email"`
-	PasswordHash     pgtype.Text        `json:"password_hash"`
-	Plan             string             `json:"plan"`
-	StripeCustomerID pgtype.Text        `json:"stripe_customer_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ID                  pgtype.UUID        `json:"id"`
+	Email               string             `json:"email"`
+	PasswordHash        pgtype.Text        `json:"password_hash"`
+	Plan                string             `json:"plan"`
+	StripeCustomerID    pgtype.Text        `json:"stripe_customer_id"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	IsAdmin             bool               `json:"is_admin"`
+	CanCreatePortfolio  bool               `json:"can_create_portfolio"`
+	CanPublishPortfolio bool               `json:"can_publish_portfolio"`
 }

@@ -57,3 +57,11 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (accessToken
 	return GenerateTokenPair(claims.UserID, s.jwtSecret)
 }
 
+func (s *Service) GetCurrentUser(ctx context.Context, userIDStr string) (generated.User, error) {
+	var id pgtype.UUID
+	if err := id.Scan(userIDStr); err != nil {
+		return generated.User{}, errors.New("invalid user id")
+	}
+	return s.queries.GetUserByID(ctx, id)
+}
+

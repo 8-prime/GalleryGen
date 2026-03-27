@@ -26,6 +26,8 @@ type Config struct {
 	OIDCClientID       string
 	OIDCClientSecret   string
 	AppBaseURL         string
+	AdminEmail         string
+	AdminPassword      string
 }
 
 func Load() *Config {
@@ -50,6 +52,8 @@ func Load() *Config {
 		OIDCClientID:       os.Getenv("OIDC_CLIENT_ID"),
 		OIDCClientSecret:   os.Getenv("OIDC_CLIENT_SECRET"),
 		AppBaseURL:         getEnvOrDefault("APP_BASE_URL", "http://localhost:8080"),
+		AdminEmail:         os.Getenv("ADMIN_EMAIL"),
+		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
 	}
 	return c
 }
