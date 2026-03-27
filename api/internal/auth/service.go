@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/galleryGen/api/db/generated"
+	"github.com/jackc/pgx/v5/pgtype"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -26,7 +27,7 @@ func (s *Service) Register(ctx context.Context, email, password string) (accessT
 	}
 	user, err := s.queries.CreateUser(ctx, generated.CreateUserParams{
 		Email:        email,
-		PasswordHash: ptrStr(string(hash)),
+		PasswordHash: pgtype.Text{String: string(hash), Valid: true},
 	})
 	if err != nil {
 		return
@@ -39,10 +40,10 @@ func (s *Service) Login(ctx context.Context, email, password string) (accessToke
 	if err != nil {
 		return "", "", ErrInvalidCredentials
 	}
-	if user.PasswordHash == nil {
+	if !user.PasswordHash.Valid {
 		return "", "", ErrInvalidCredentials
 	}
-	if err = bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
+	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash.String), []byte(password)); err != nil {
 		return "", "", ErrInvalidCredentials
 	}
 	return GenerateTokenPair(user.ID.String(), s.jwtSecret)
@@ -56,4 +57,3 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (accessToken
 	return GenerateTokenPair(claims.UserID, s.jwtSecret)
 }
 
-func ptrStr(s string) *string { return &s }

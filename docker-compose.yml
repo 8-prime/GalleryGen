@@ -41,12 +41,13 @@ services:
     restart: unless-stopped
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
     ports:
       - "80:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./web/dist:/usr/share/nginx/html/app:ro
       - nginx_cache:/var/cache/nginx
     depends_on:
       - api

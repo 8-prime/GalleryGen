@@ -11,5 +11,11 @@ UPDATE portfolios SET slug = $2, title = $3, description = $4, published = $5
 WHERE id = $1 AND user_id = $6
 RETURNING *;
 
+-- name: GetPortfolioByID :one
+SELECT * FROM portfolios WHERE id = $1 AND user_id = $2;
+
 -- name: DeletePortfolio :exec
 DELETE FROM portfolios WHERE id = $1 AND user_id = $2;
+
+-- name: GetPublishedPortfolioBySlug :one
+SELECT * FROM portfolios WHERE slug = $1 AND published = true;

@@ -9,6 +9,7 @@ import (
 	_ "image/png"
 	"image"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"path/filepath"
 	"strings"
@@ -43,19 +44,22 @@ type ImageResponse struct {
 func (s *Service) Upload(ctx context.Context, userIDStr string, fh *multipart.FileHeader) (*ImageResponse, error) {
 	f, err := fh.Open()
 	if err != nil {
+		slog.ErrorContext(ctx, "upload: open file header failed", "err", err)
 		return nil, err
 	}
 	defer f.Close()
 
-	// Read all to detect dimensions
 	data, err := io.ReadAll(f)
 	if err != nil {
+		slog.ErrorContext(ctx, "upload: read file data failed", "err", err)
 		return nil, err
 	}
 
 	var width, height int
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err == nil {
+	if err != nil {
+		slog.Debug("upload: could not decode image dimensions (non-fatal)", "filename", fh.Filename, "err", err)
+	} else {
 		width = cfg.Width
 		height = cfg.Height
 	}
@@ -63,12 +67,15 @@ func (s *Service) Upload(ctx context.Context, userIDStr string, fh *multipart.Fi
 	ext := strings.ToLower(filepath.Ext(fh.Filename))
 	storageKey := fmt.Sprintf("%s/%d%s", userIDStr, time.Now().UnixNano(), ext)
 
+	slog.Debug("upload: writing to storage", "storage_key", storageKey, "size", fh.Size)
 	if err := s.storage.Put(ctx, storageKey, bytes.NewReader(data), fh.Size, fh.Header.Get("Content-Type")); err != nil {
+		slog.ErrorContext(ctx, "upload: storage.Put failed", "storage_key", storageKey, "err", err)
 		return nil, err
 	}
 
 	var userID pgtype.UUID
 	if err := userID.Scan(userIDStr); err != nil {
+		slog.ErrorContext(ctx, "upload: invalid user UUID", "user_id", userIDStr, "err", err)
 		return nil, err
 	}
 
@@ -82,6 +89,7 @@ func (s *Service) Upload(ctx context.Context, userIDStr string, fh *multipart.Fi
 		SizeBytes:  pgtype.Int8{Int64: fh.Size, Valid: true},
 	})
 	if err != nil {
+		slog.ErrorContext(ctx, "upload: db insert failed", "storage_key", storageKey, "err", err)
 		return nil, err
 	}
 
@@ -154,6 +162,22 @@ func (s *Service) Raw(ctx context.Context, userIDStr, imageIDStr string) (*RawIm
 	return &RawImage{Data: data, ContentType: img.MimeType, Filename: img.Filename}, nil
 }
 
+func (s *Service) RawPublic(ctx context.Context, imageIDStr string) (*RawImage, error) {
+	var imageID pgtype.UUID
+	if err := imageID.Scan(imageIDStr); err != nil {
+		return nil, err
+	}
+	img, err := s.queries.GetImageByIDPublic(ctx, imageID)
+	if err != nil {
+		return nil, err
+	}
+	data, err := s.storage.Get(ctx, img.StorageKey)
+	if err != nil {
+		return nil, err
+	}
+	return &RawImage{Data: data, ContentType: img.MimeType, Filename: img.Filename}, nil
+}
+
 func (s *Service) Delete(ctx context.Context, userIDStr, imageIDStr string) error {
 	var userID pgtype.UUID
 	if err := userID.Scan(userIDStr); err != nil {
@@ -179,8 +203,8 @@ func (s *Service) Delete(ctx context.Context, userIDStr, imageIDStr string) erro
 
 func toResponse(img generated.Image, cfg *ImgproxyConfig) *ImageResponse {
 	id := img.ID.String()
-	thumbURL := "/api/images/" + id + "/raw"
-	fullURL := "/api/images/" + id + "/raw"
+	thumbURL := "/media/" + id
+	fullURL := "/media/" + id
 	if cfg != nil && cfg.Enabled {
 		thumbURL = cfg.SignURL(img.StorageKey, 400, 400)
 		fullURL = cfg.SignURL(img.StorageKey, 1600, 0)

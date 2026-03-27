@@ -7,6 +7,6 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
 
-FROM gcr.io/distroless/static:nonroot
+FROM gcr.io/distroless/static
 COPY --from=builder /app/server /server
 ENTRYPOINT ["/server"]

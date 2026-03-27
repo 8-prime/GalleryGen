@@ -14,3 +14,6 @@ SELECT * FROM images WHERE id = $1 AND user_id = $2;
 
 -- name: DeleteImage :exec
 DELETE FROM images WHERE id = $1 AND user_id = $2;
+
+-- name: GetImageByIDPublic :one
+SELECT * FROM images WHERE id = $1;

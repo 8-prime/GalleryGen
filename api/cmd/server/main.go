@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -20,7 +22,45 @@ import (
 	"github.com/galleryGen/api/migrations"
 )
 
+// statusWriter wraps ResponseWriter to capture the status code for logging.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (sw *statusWriter) WriteHeader(status int) {
+	sw.status = status
+	sw.ResponseWriter.WriteHeader(status)
+}
+
+// requestLogger is a structured slog middleware replacing chi's default Logger.
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(sw, r)
+
+		level := slog.LevelInfo
+		if sw.status >= 500 {
+			level = slog.LevelError
+		} else if sw.status >= 400 {
+			level = slog.LevelWarn
+		}
+		slog.Log(r.Context(), level, "request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", sw.status,
+			"duration_ms", time.Since(start).Milliseconds(),
+		)
+	})
+}
+
 func main() {
+	// JSON structured logging to stderr — easy to grep in container logs.
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	})))
+
 	cfg := config.Load()
 
 	if cfg.DatabaseURL == "" {
@@ -33,18 +73,20 @@ func main() {
 	ctx := context.Background()
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("failed to connect to database: %v", err)
+		slog.Error("failed to connect to database", "err", err)
+		os.Exit(1)
 	}
 	defer pool.Close()
 
-	// Run migrations
 	goose.SetBaseFS(migrations.FS)
 	if err := goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("goose dialect: %v", err)
+		slog.Error("goose dialect error", "err", err)
+		os.Exit(1)
 	}
 	sqlDB := stdlib.OpenDBFromPool(pool)
 	if err := goose.Up(sqlDB, "."); err != nil {
-		log.Fatalf("goose up: %v", err)
+		slog.Error("goose up failed", "err", err)
+		os.Exit(1)
 	}
 
 	queries := generated.New(pool)
@@ -52,6 +94,11 @@ func main() {
 	authSvc := auth.NewService(queries, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authSvc)
 	portfolioHandler := portfolios.NewHandler(queries)
+	portfolioPageHandler, err := portfolios.NewPageHandler(queries)
+	if err != nil {
+		slog.Error("failed to load portfolio templates", "err", err)
+		os.Exit(1)
+	}
 
 	imgproxyCfg := &images.ImgproxyConfig{
 		Enabled: cfg.ImgproxyEnabled,
@@ -64,7 +111,7 @@ func main() {
 	imageHandler := images.NewHandler(imageSvc)
 
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +138,7 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.Middleware(cfg.JWTSecret))
 			r.Route("/portfolios", func(r chi.Router) {
-				r.Get("/", portfolioHandler.List)
+				portfolioHandler.RegisterRoutes(r)
 			})
 			r.Route("/images", func(r chi.Router) {
 				r.Get("/", imageHandler.List)
@@ -102,17 +149,26 @@ func main() {
 		})
 	})
 
+	// Public image serving (no auth — UUIDs are not guessable)
+	r.Get("/media/{id}", imageHandler.ServePublic)
+	// Public portfolio API (used by the editor preview)
+	r.Get("/api/public/portfolios/{slug}", portfolioHandler.GetPublicPortfolio)
+	// Server-rendered public portfolio pages
+	r.Get("/p/{slug}", portfolioPageHandler.ServePortfolio)
+
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	})
 
 	if err := os.MkdirAll(cfg.StoragePath, 0755); err != nil {
-		log.Fatalf("failed to create storage path: %v", err)
+		slog.Error("failed to create storage path", "path", cfg.StoragePath, "err", err)
+		os.Exit(1)
 	}
 
-	log.Printf("server listening on :%s", cfg.Port)
+	slog.Info("server starting", "port", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, r); err != nil {
-		log.Fatal(err)
+		slog.Error("server error", "err", err)
+		os.Exit(1)
 	}
 }

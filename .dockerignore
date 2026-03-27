@@ -67,5 +67,8 @@ project.fragment.lock.json
 # Ignore Rider files
 .idea/
 
-# Ignore local Dockerfiles
-Dockerfile*
+# Ignore root Dockerfile only (not nginx/Dockerfile)
+./Dockerfile
+
+# Ignore local frontend build artifacts
+web/dist/
