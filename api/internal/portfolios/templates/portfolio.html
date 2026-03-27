@@ -1,165 +1,179 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{.Title}}</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>{{.Title}}</title>
+        <style>
+            *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      background: #0a0a0a;
-      color: #e5e5e5;
-      font-family: system-ui, -apple-system, sans-serif;
-      min-height: 100vh;
-    }
+            body {
+              background: #fff;
+              color: #e5e5e5;
+              font-family: system-ui, -apple-system, sans-serif;
+              min-height: 100vh;
+            }
 
-    header {
-      padding: 2rem 2rem 1rem;
-      max-width: 1400px;
-      margin: 0 auto;
-    }
+            header {
+              padding: 2rem 2rem 1rem;
+              max-width: 1400px;
+              margin: 0 auto;
+            }
 
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-    }
+            h1 {
+              font-size: 1.5rem;
+              font-weight: 600;
+              letter-spacing: 0.05em;
+              text-transform: uppercase;
+            }
 
-    .description {
-      margin-top: 0.5rem;
-      color: #999;
-      font-size: 0.9rem;
-    }
+            .description {
+              margin-top: 0.5rem;
+              color: #999;
+              font-size: 0.9rem;
+            }
 
-    nav.tabs {
-      display: flex;
-      gap: 0;
-      margin-top: 1.5rem;
-      border-bottom: 1px solid #222;
-    }
+            nav.tabs {
+              display: flex;
+              gap: 0;
+              margin-top: 1.5rem;
+              border-bottom: 1px solid #222;
+            }
 
-    nav.tabs a {
-      padding: 0.5rem 1.25rem;
-      color: #666;
-      text-decoration: none;
-      font-size: 0.85rem;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
-      transition: color 0.15s, border-color 0.15s;
-    }
+            nav.tabs a {
+              padding: 0.5rem 1.25rem;
+              color: #666;
+              text-decoration: none;
+              font-size: 0.85rem;
+              letter-spacing: 0.05em;
+              text-transform: uppercase;
+              border-bottom: 2px solid transparent;
+              margin-bottom: -1px;
+              transition: color 0.15s, border-color 0.15s;
+            }
 
-    nav.tabs a:hover { color: #ccc; }
-    nav.tabs a.active { color: #e5e5e5; border-bottom-color: #e5e5e5; }
+            nav.tabs a:hover { color: #ccc; }
+            nav.tabs a.active { color: #e5e5e5; border-bottom-color: #e5e5e5; }
 
-    .page-section { display: none; padding: 1rem 2rem 2rem; max-width: 1400px; margin: 0 auto; }
-    .page-section.active { display: block; }
+            .page-section { display: none; padding: 1rem 2rem 2rem; max-width: 1400px; margin: 0 auto; }
+            .page-section.active { display: block; }
 
-    /* No-JS fallback: show all sections */
-    .no-js .page-section { display: block; margin-bottom: 2rem; }
-    .no-js .page-section-title { display: block; }
+            /* No-JS fallback: show all sections */
+            .no-js .page-section { display: block; margin-bottom: 2rem; }
+            .no-js .page-section-title { display: block; }
 
-    .page-section-title {
-      display: none;
-      font-size: 1rem;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      margin-bottom: 0.75rem;
-      color: #999;
-    }
+            .page-section-title {
+              display: none;
+              font-size: 1rem;
+              font-weight: 600;
+              letter-spacing: 0.05em;
+              text-transform: uppercase;
+              margin-bottom: 0.75rem;
+              color: #999;
+            }
 
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      grid-auto-flow: row dense;
-      gap: {{.GapPx}}px;
-    }
+            .grid {
+              display: grid;
+              grid-template-columns: repeat(3, 1fr);
+              grid-auto-flow: row dense;
+              gap: {{.GapPx}}px;
+            }
 
-    .grid-item {
-      background: #fff;
-      overflow: hidden;
-    }
+            .grid-item {
+              background: #fff;
+              overflow: hidden;
+            }
 
-    .grid-item img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }
+            .grid-item img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+              display: block;
+            }
 
-    @media (max-width: 900px) {
-      .grid { grid-template-columns: repeat(2, 1fr); }
-    }
-    @media (max-width: 500px) {
-      .grid { grid-template-columns: 1fr; }
-      header { padding: 1.25rem 1rem 0.75rem; }
-      .page-section { padding: 0.75rem 1rem 1.5rem; }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>{{.Title}}</h1>
-    {{if .Description}}<p class="description">{{.Description}}</p>{{end}}
-    {{if gt (len .Pages) 1}}
-    <nav class="tabs" id="tabs">
-      {{range $i, $page := .Pages}}
-      <a href="#page-{{$page.Slug}}" data-page="{{$page.Slug}}" class="{{if eq $i 0}}active{{end}}">{{$page.Title}}</a>
-      {{end}}
-    </nav>
-    {{end}}
-  </header>
+            @media (max-width: 900px) {
+              .grid { grid-template-columns: repeat(2, 1fr); }
+            }
+            @media (max-width: 500px) {
+              .grid { grid-template-columns: 1fr; }
+              header { padding: 1.25rem 1rem 0.75rem; }
+              .page-section { padding: 0.75rem 1rem 1.5rem; }
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>{{.Title}}</h1>
+            {{if .Description}}
+            <p class="description">{{.Description}}</p>
+            {{end}} {{if gt (len .Pages) 1}}
+            <nav class="tabs" id="tabs">
+                {{range $i, $page := .Pages}}
+                <a
+                    href="#page-{{$page.Slug}}"
+                    data-page="{{$page.Slug}}"
+                    class="{{if eq $i 0}}active{{end}}"
+                    >{{$page.Title}}</a
+                >
+                {{end}}
+            </nav>
+            {{end}}
+        </header>
 
-  {{range $i, $page := .Pages}}
-  <section id="page-{{$page.Slug}}" class="page-section {{if eq $i 0}}active{{end}}">
-    {{if gt (len $.Pages) 1}}<h2 class="page-section-title">{{$page.Title}}</h2>{{end}}
-    <div class="grid">
-      {{range $page.Images}}
-      <div class="grid-item" style="grid-column:span {{.ColSpan}};grid-row:span {{.RowSpan}};aspect-ratio:{{.ColSpan}}/{{.RowSpan}};padding:{{$.MattePx}}px;">
-        <img
-          src="{{.SrcURL}}"
-          alt="{{.Filename}}"
-          loading="lazy"
+        {{range $i, $page := .Pages}}
+        <section
+            id="page-{{$page.Slug}}"
+            class="page-section {{if eq $i 0}}active{{end}}"
         >
-      </div>
-      {{end}}
-    </div>
-  </section>
-  {{end}}
+            {{if gt (len $.Pages) 1}}
+            <h2 class="page-section-title">{{$page.Title}}</h2>
+            {{end}}
+            <div class="grid">
+                {{range $page.Images}}
+                <div
+                    class="grid-item"
+                    style="grid-column:span {{.ColSpan}};grid-row:span {{.RowSpan}};aspect-ratio:{{.ColSpan}}/{{.RowSpan}};padding:{{$.MattePx}}px;"
+                >
+                    <img src="{{.SrcURL}}" alt="{{.Filename}}" loading="lazy" />
+                </div>
+                {{end}}
+            </div>
+        </section>
+        {{end}}
 
-  <script>
-    (function () {
-      var tabs = document.getElementById('tabs');
-      if (!tabs) return;
-      var links = tabs.querySelectorAll('a[data-page]');
-      var sections = document.querySelectorAll('.page-section');
+        <script>
+            (function () {
+                var tabs = document.getElementById("tabs");
+                if (!tabs) return;
+                var links = tabs.querySelectorAll("a[data-page]");
+                var sections = document.querySelectorAll(".page-section");
 
-      function show(slug) {
-        links.forEach(function (l) { l.classList.toggle('active', l.dataset.page === slug); });
-        sections.forEach(function (s) { s.classList.toggle('active', s.id === 'page-' + slug); });
-      }
+                function show(slug) {
+                    links.forEach(function (l) {
+                        l.classList.toggle("active", l.dataset.page === slug);
+                    });
+                    sections.forEach(function (s) {
+                        s.classList.toggle("active", s.id === "page-" + slug);
+                    });
+                }
 
-      // Handle hash on load
-      var hash = location.hash.replace('#page-', '');
-      if (hash) show(hash);
+                // Handle hash on load
+                var hash = location.hash.replace("#page-", "");
+                if (hash) show(hash);
 
-      tabs.addEventListener('click', function (e) {
-        var link = e.target.closest('a[data-page]');
-        if (!link) return;
-        e.preventDefault();
-        history.pushState(null, '', '#page-' + link.dataset.page);
-        show(link.dataset.page);
-      });
+                tabs.addEventListener("click", function (e) {
+                    var link = e.target.closest("a[data-page]");
+                    if (!link) return;
+                    e.preventDefault();
+                    history.pushState(null, "", "#page-" + link.dataset.page);
+                    show(link.dataset.page);
+                });
 
-      window.addEventListener('popstate', function () {
-        var h = location.hash.replace('#page-', '');
-        if (h) show(h);
-      });
-    })();
-  </script>
-</body>
+                window.addEventListener("popstate", function () {
+                    var h = location.hash.replace("#page-", "");
+                    if (h) show(h);
+                });
+            })();
+        </script>
+    </body>
 </html>
