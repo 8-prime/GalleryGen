@@ -28,6 +28,7 @@ export interface PortfolioImage {
   row_span: number
   col_start: number
   row_start: number
+  row_break_before: boolean
   filename: string
   mime_type: string
   width: number
@@ -159,7 +160,7 @@ export function updateImageLayout(
   portfolioId: string,
   pageId: string,
   itemId: string,
-  data: { col_span: number; row_span: number }
+  data: { col_span: number; row_span: number; row_break_before?: boolean }
 ): Promise<PortfolioImage> {
   return api
     .patch(`portfolios/${portfolioId}/pages/${pageId}/images/${itemId}`, { json: data })

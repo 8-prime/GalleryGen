@@ -14,7 +14,7 @@ import (
 const createPortfolio = `-- name: CreatePortfolio :one
 INSERT INTO portfolios (user_id, slug, title, description, gap_px, matte_px)
 VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, slug, title, description, published, gap_px, matte_px, created_at
+RETURNING id, user_id, slug, title, description, published, created_at, gap_px, matte_px
 `
 
 type CreatePortfolioParams struct {
@@ -43,9 +43,9 @@ func (q *Queries) CreatePortfolio(ctx context.Context, arg CreatePortfolioParams
 		&i.Title,
 		&i.Description,
 		&i.Published,
+		&i.CreatedAt,
 		&i.GapPx,
 		&i.MattePx,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -65,7 +65,7 @@ func (q *Queries) DeletePortfolio(ctx context.Context, arg DeletePortfolioParams
 }
 
 const getPortfolioByID = `-- name: GetPortfolioByID :one
-SELECT id, user_id, slug, title, description, published, gap_px, matte_px, created_at FROM portfolios WHERE id = $1 AND user_id = $2
+SELECT id, user_id, slug, title, description, published, created_at, gap_px, matte_px FROM portfolios WHERE id = $1 AND user_id = $2
 `
 
 type GetPortfolioByIDParams struct {
@@ -83,15 +83,15 @@ func (q *Queries) GetPortfolioByID(ctx context.Context, arg GetPortfolioByIDPara
 		&i.Title,
 		&i.Description,
 		&i.Published,
+		&i.CreatedAt,
 		&i.GapPx,
 		&i.MattePx,
-		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getPortfoliosByUserID = `-- name: GetPortfoliosByUserID :many
-SELECT id, user_id, slug, title, description, published, gap_px, matte_px, created_at FROM portfolios WHERE user_id = $1 ORDER BY created_at DESC
+SELECT id, user_id, slug, title, description, published, created_at, gap_px, matte_px FROM portfolios WHERE user_id = $1 ORDER BY created_at DESC
 `
 
 func (q *Queries) GetPortfoliosByUserID(ctx context.Context, userID pgtype.UUID) ([]Portfolio, error) {
@@ -110,9 +110,9 @@ func (q *Queries) GetPortfoliosByUserID(ctx context.Context, userID pgtype.UUID)
 			&i.Title,
 			&i.Description,
 			&i.Published,
+			&i.CreatedAt,
 			&i.GapPx,
 			&i.MattePx,
-			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -125,7 +125,7 @@ func (q *Queries) GetPortfoliosByUserID(ctx context.Context, userID pgtype.UUID)
 }
 
 const getPublishedPortfolioBySlug = `-- name: GetPublishedPortfolioBySlug :one
-SELECT id, user_id, slug, title, description, published, gap_px, matte_px, created_at FROM portfolios WHERE slug = $1 AND published = true
+SELECT id, user_id, slug, title, description, published, created_at, gap_px, matte_px FROM portfolios WHERE slug = $1 AND published = true
 `
 
 func (q *Queries) GetPublishedPortfolioBySlug(ctx context.Context, slug string) (Portfolio, error) {
@@ -138,9 +138,9 @@ func (q *Queries) GetPublishedPortfolioBySlug(ctx context.Context, slug string) 
 		&i.Title,
 		&i.Description,
 		&i.Published,
+		&i.CreatedAt,
 		&i.GapPx,
 		&i.MattePx,
-		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -148,7 +148,7 @@ func (q *Queries) GetPublishedPortfolioBySlug(ctx context.Context, slug string) 
 const updatePortfolio = `-- name: UpdatePortfolio :one
 UPDATE portfolios SET slug = $2, title = $3, description = $4, published = $5, gap_px = $6, matte_px = $7
 WHERE id = $1 AND user_id = $8
-RETURNING id, user_id, slug, title, description, published, gap_px, matte_px, created_at
+RETURNING id, user_id, slug, title, description, published, created_at, gap_px, matte_px
 `
 
 type UpdatePortfolioParams struct {
@@ -181,9 +181,9 @@ func (q *Queries) UpdatePortfolio(ctx context.Context, arg UpdatePortfolioParams
 		&i.Title,
 		&i.Description,
 		&i.Published,
+		&i.CreatedAt,
 		&i.GapPx,
 		&i.MattePx,
-		&i.CreatedAt,
 	)
 	return i, err
 }

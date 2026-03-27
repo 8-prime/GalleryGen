@@ -1,5 +1,5 @@
 -- name: GetGridItemsByPageID :many
-SELECT gi.id, gi.page_id, gi.image_id, gi.col_start, gi.row_start, gi.col_span, gi.row_span, gi.sort_order,
+SELECT gi.id, gi.page_id, gi.image_id, gi.col_start, gi.row_start, gi.col_span, gi.row_span, gi.sort_order, gi.row_break_before,
        i.storage_key, i.filename, i.mime_type, i.width, i.height
 FROM grid_items gi JOIN images i ON gi.image_id = i.id
 WHERE gi.page_id = $1 ORDER BY gi.sort_order;
@@ -15,8 +15,8 @@ VALUES ($1, $2, $3, $4, 1, 1, $5) RETURNING *;
 DELETE FROM grid_items WHERE id = $1 AND page_id = $2;
 
 -- name: UpdateGridItem :one
-UPDATE grid_items SET col_span = $2, row_span = $3
-WHERE id = $1 AND page_id = $4 RETURNING *;
+UPDATE grid_items SET col_span = $2, row_span = $3, row_break_before = $4
+WHERE id = $1 AND page_id = $5 RETURNING *;
 
 -- name: UpdateGridItemSortOrder :one
 UPDATE grid_items SET sort_order = $2

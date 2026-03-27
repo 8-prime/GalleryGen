@@ -24,7 +24,7 @@ func (q *Queries) CountGridItemsByPageID(ctx context.Context, pageID pgtype.UUID
 
 const createGridItem = `-- name: CreateGridItem :one
 INSERT INTO grid_items (page_id, image_id, col_start, row_start, col_span, row_span, sort_order)
-VALUES ($1, $2, $3, $4, 1, 1, $5) RETURNING id, page_id, image_id, col_start, row_start, col_span, row_span, sort_order
+VALUES ($1, $2, $3, $4, 1, 1, $5) RETURNING id, page_id, image_id, col_start, row_start, col_span, row_span, sort_order, row_break_before
 `
 
 type CreateGridItemParams struct {
@@ -53,6 +53,7 @@ func (q *Queries) CreateGridItem(ctx context.Context, arg CreateGridItemParams) 
 		&i.ColSpan,
 		&i.RowSpan,
 		&i.SortOrder,
+		&i.RowBreakBefore,
 	)
 	return i, err
 }
@@ -72,26 +73,27 @@ func (q *Queries) DeleteGridItem(ctx context.Context, arg DeleteGridItemParams) 
 }
 
 const getGridItemsByPageID = `-- name: GetGridItemsByPageID :many
-SELECT gi.id, gi.page_id, gi.image_id, gi.col_start, gi.row_start, gi.col_span, gi.row_span, gi.sort_order,
+SELECT gi.id, gi.page_id, gi.image_id, gi.col_start, gi.row_start, gi.col_span, gi.row_span, gi.sort_order, gi.row_break_before,
        i.storage_key, i.filename, i.mime_type, i.width, i.height
 FROM grid_items gi JOIN images i ON gi.image_id = i.id
 WHERE gi.page_id = $1 ORDER BY gi.sort_order
 `
 
 type GetGridItemsByPageIDRow struct {
-	ID         pgtype.UUID `json:"id"`
-	PageID     pgtype.UUID `json:"page_id"`
-	ImageID    pgtype.UUID `json:"image_id"`
-	ColStart   int32       `json:"col_start"`
-	RowStart   int32       `json:"row_start"`
-	ColSpan    int32       `json:"col_span"`
-	RowSpan    int32       `json:"row_span"`
-	SortOrder  int32       `json:"sort_order"`
-	StorageKey string      `json:"storage_key"`
-	Filename   string      `json:"filename"`
-	MimeType   string      `json:"mime_type"`
-	Width      pgtype.Int4 `json:"width"`
-	Height     pgtype.Int4 `json:"height"`
+	ID             pgtype.UUID `json:"id"`
+	PageID         pgtype.UUID `json:"page_id"`
+	ImageID        pgtype.UUID `json:"image_id"`
+	ColStart       int32       `json:"col_start"`
+	RowStart       int32       `json:"row_start"`
+	ColSpan        int32       `json:"col_span"`
+	RowSpan        int32       `json:"row_span"`
+	SortOrder      int32       `json:"sort_order"`
+	RowBreakBefore bool        `json:"row_break_before"`
+	StorageKey     string      `json:"storage_key"`
+	Filename       string      `json:"filename"`
+	MimeType       string      `json:"mime_type"`
+	Width          pgtype.Int4 `json:"width"`
+	Height         pgtype.Int4 `json:"height"`
 }
 
 func (q *Queries) GetGridItemsByPageID(ctx context.Context, pageID pgtype.UUID) ([]GetGridItemsByPageIDRow, error) {
@@ -112,6 +114,7 @@ func (q *Queries) GetGridItemsByPageID(ctx context.Context, pageID pgtype.UUID) 
 			&i.ColSpan,
 			&i.RowSpan,
 			&i.SortOrder,
+			&i.RowBreakBefore,
 			&i.StorageKey,
 			&i.Filename,
 			&i.MimeType,
@@ -129,15 +132,16 @@ func (q *Queries) GetGridItemsByPageID(ctx context.Context, pageID pgtype.UUID) 
 }
 
 const updateGridItem = `-- name: UpdateGridItem :one
-UPDATE grid_items SET col_span = $2, row_span = $3
-WHERE id = $1 AND page_id = $4 RETURNING id, page_id, image_id, col_start, row_start, col_span, row_span, sort_order
+UPDATE grid_items SET col_span = $2, row_span = $3, row_break_before = $4
+WHERE id = $1 AND page_id = $5 RETURNING id, page_id, image_id, col_start, row_start, col_span, row_span, sort_order, row_break_before
 `
 
 type UpdateGridItemParams struct {
-	ID      pgtype.UUID `json:"id"`
-	ColSpan int32       `json:"col_span"`
-	RowSpan int32       `json:"row_span"`
-	PageID  pgtype.UUID `json:"page_id"`
+	ID             pgtype.UUID `json:"id"`
+	ColSpan        int32       `json:"col_span"`
+	RowSpan        int32       `json:"row_span"`
+	RowBreakBefore bool        `json:"row_break_before"`
+	PageID         pgtype.UUID `json:"page_id"`
 }
 
 func (q *Queries) UpdateGridItem(ctx context.Context, arg UpdateGridItemParams) (GridItem, error) {
@@ -145,6 +149,7 @@ func (q *Queries) UpdateGridItem(ctx context.Context, arg UpdateGridItemParams) 
 		arg.ID,
 		arg.ColSpan,
 		arg.RowSpan,
+		arg.RowBreakBefore,
 		arg.PageID,
 	)
 	var i GridItem
@@ -157,13 +162,14 @@ func (q *Queries) UpdateGridItem(ctx context.Context, arg UpdateGridItemParams) 
 		&i.ColSpan,
 		&i.RowSpan,
 		&i.SortOrder,
+		&i.RowBreakBefore,
 	)
 	return i, err
 }
 
 const updateGridItemSortOrder = `-- name: UpdateGridItemSortOrder :one
 UPDATE grid_items SET sort_order = $2
-WHERE id = $1 AND page_id = $3 RETURNING id, page_id, image_id, col_start, row_start, col_span, row_span, sort_order
+WHERE id = $1 AND page_id = $3 RETURNING id, page_id, image_id, col_start, row_start, col_span, row_span, sort_order, row_break_before
 `
 
 type UpdateGridItemSortOrderParams struct {
@@ -184,6 +190,7 @@ func (q *Queries) UpdateGridItemSortOrder(ctx context.Context, arg UpdateGridIte
 		&i.ColSpan,
 		&i.RowSpan,
 		&i.SortOrder,
+		&i.RowBreakBefore,
 	)
 	return i, err
 }

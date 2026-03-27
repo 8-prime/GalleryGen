@@ -14,19 +14,20 @@ import (
 )
 
 type portfolioImageResponse struct {
-	ID        string `json:"id"`
-	ImageID   string `json:"image_id"`
-	SortOrder int32  `json:"sort_order"`
-	ColSpan   int32  `json:"col_span"`
-	RowSpan   int32  `json:"row_span"`
-	ColStart  int32  `json:"col_start"`
-	RowStart  int32  `json:"row_start"`
-	Filename  string `json:"filename"`
-	MimeType  string `json:"mime_type"`
-	Width     int32  `json:"width"`
-	Height    int32  `json:"height"`
-	ThumbURL  string `json:"thumb_url"`
-	FullURL   string `json:"full_url"`
+	ID             string `json:"id"`
+	ImageID        string `json:"image_id"`
+	SortOrder      int32  `json:"sort_order"`
+	ColSpan        int32  `json:"col_span"`
+	RowSpan        int32  `json:"row_span"`
+	ColStart       int32  `json:"col_start"`
+	RowStart       int32  `json:"row_start"`
+	RowBreakBefore bool   `json:"row_break_before"`
+	Filename       string `json:"filename"`
+	MimeType       string `json:"mime_type"`
+	Width          int32  `json:"width"`
+	Height         int32  `json:"height"`
+	ThumbURL       string `json:"thumb_url"`
+	FullURL        string `json:"full_url"`
 }
 
 func toPortfolioImageResponse(row generated.GetGridItemsByPageIDRow) portfolioImageResponse {
@@ -40,19 +41,20 @@ func toPortfolioImageResponse(row generated.GetGridItemsByPageIDRow) portfolioIm
 		h = row.Height.Int32
 	}
 	return portfolioImageResponse{
-		ID:        row.ID.String(),
-		ImageID:   imageID,
-		SortOrder: row.SortOrder,
-		ColSpan:   row.ColSpan,
-		RowSpan:   row.RowSpan,
-		ColStart:  row.ColStart,
-		RowStart:  row.RowStart,
-		Filename:  row.Filename,
-		MimeType:  row.MimeType,
-		Width:     w,
-		Height:    h,
-		ThumbURL:  url,
-		FullURL:   url,
+		ID:             row.ID.String(),
+		ImageID:        imageID,
+		SortOrder:      row.SortOrder,
+		ColSpan:        row.ColSpan,
+		RowSpan:        row.RowSpan,
+		ColStart:       row.ColStart,
+		RowStart:       row.RowStart,
+		RowBreakBefore: row.RowBreakBefore,
+		Filename:       row.Filename,
+		MimeType:       row.MimeType,
+		Width:          w,
+		Height:         h,
+		ThumbURL:       url,
+		FullURL:        url,
 	}
 }
 
@@ -308,8 +310,9 @@ func (h *Handler) UpdateImageLayout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		ColSpan int32 `json:"col_span"`
-		RowSpan int32 `json:"row_span"`
+		ColSpan        int32 `json:"col_span"`
+		RowSpan        int32 `json:"row_span"`
+		RowBreakBefore bool  `json:"row_break_before"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -323,10 +326,11 @@ func (h *Handler) UpdateImageLayout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	item, err := h.queries.UpdateGridItem(r.Context(), generated.UpdateGridItemParams{
-		ID:      itemID,
-		PageID:  page.ID,
-		ColSpan: body.ColSpan,
-		RowSpan: body.RowSpan,
+		ID:             itemID,
+		PageID:         page.ID,
+		ColSpan:        body.ColSpan,
+		RowSpan:        body.RowSpan,
+		RowBreakBefore: body.RowBreakBefore,
 	})
 	if err != nil {
 		slog.ErrorContext(r.Context(), "UpdateImageLayout: db update failed", "item_id", chi.URLParam(r, "itemId"), "err", err)
@@ -336,15 +340,16 @@ func (h *Handler) UpdateImageLayout(w http.ResponseWriter, r *http.Request) {
 
 	url := "/img/" + item.ImageID.String()
 	writeJSON(w, http.StatusOK, portfolioImageResponse{
-		ID:        item.ID.String(),
-		ImageID:   item.ImageID.String(),
-		SortOrder: item.SortOrder,
-		ColSpan:   item.ColSpan,
-		RowSpan:   item.RowSpan,
-		ColStart:  item.ColStart,
-		RowStart:  item.RowStart,
-		ThumbURL:  url,
-		FullURL:   url,
+		ID:             item.ID.String(),
+		ImageID:        item.ImageID.String(),
+		SortOrder:      item.SortOrder,
+		ColSpan:        item.ColSpan,
+		RowSpan:        item.RowSpan,
+		ColStart:       item.ColStart,
+		RowStart:       item.RowStart,
+		RowBreakBefore: item.RowBreakBefore,
+		ThumbURL:       url,
+		FullURL:        url,
 	})
 }
 
@@ -422,15 +427,16 @@ func (h *Handler) addImageToPage(w http.ResponseWriter, r *http.Request, pageID 
 
 	url := "/img/" + item.ImageID.String()
 	writeJSON(w, http.StatusCreated, portfolioImageResponse{
-		ID:        item.ID.String(),
-		ImageID:   item.ImageID.String(),
-		SortOrder: item.SortOrder,
-		ColSpan:   item.ColSpan,
-		RowSpan:   item.RowSpan,
-		ColStart:  item.ColStart,
-		RowStart:  item.RowStart,
-		ThumbURL:  url,
-		FullURL:   url,
+		ID:             item.ID.String(),
+		ImageID:        item.ImageID.String(),
+		SortOrder:      item.SortOrder,
+		ColSpan:        item.ColSpan,
+		RowSpan:        item.RowSpan,
+		ColStart:       item.ColStart,
+		RowStart:       item.RowStart,
+		RowBreakBefore: item.RowBreakBefore,
+		ThumbURL:       url,
+		FullURL:        url,
 	})
 }
 

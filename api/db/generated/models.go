@@ -9,14 +9,15 @@ import (
 )
 
 type GridItem struct {
-	ID        pgtype.UUID `json:"id"`
-	PageID    pgtype.UUID `json:"page_id"`
-	ImageID   pgtype.UUID `json:"image_id"`
-	ColStart  int32       `json:"col_start"`
-	RowStart  int32       `json:"row_start"`
-	ColSpan   int32       `json:"col_span"`
-	RowSpan   int32       `json:"row_span"`
-	SortOrder int32       `json:"sort_order"`
+	ID             pgtype.UUID `json:"id"`
+	PageID         pgtype.UUID `json:"page_id"`
+	ImageID        pgtype.UUID `json:"image_id"`
+	ColStart       int32       `json:"col_start"`
+	RowStart       int32       `json:"row_start"`
+	ColSpan        int32       `json:"col_span"`
+	RowSpan        int32       `json:"row_span"`
+	SortOrder      int32       `json:"sort_order"`
+	RowBreakBefore bool        `json:"row_break_before"`
 }
 
 type Image struct {
@@ -54,9 +55,9 @@ type Portfolio struct {
 	Title       string             `json:"title"`
 	Description pgtype.Text        `json:"description"`
 	Published   pgtype.Bool        `json:"published"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	GapPx       int32              `json:"gap_px"`
 	MattePx     int32              `json:"matte_px"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
 type User struct {
