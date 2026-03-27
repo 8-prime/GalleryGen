@@ -6,6 +6,8 @@ export interface Portfolio {
   title: string
   description: string | null
   published: boolean
+  gap_px: number
+  matte_px: number
   created_at: string
 }
 
@@ -80,7 +82,7 @@ export function createPortfolio(title: string, description?: string): Promise<Po
 
 export function updatePortfolio(
   id: string,
-  data: { title: string; description?: string; slug: string; published: boolean }
+  data: { title: string; description?: string; slug: string; published: boolean; gap_px: number; matte_px: number }
 ): Promise<Portfolio> {
   return api.put(`portfolios/${id}`, { json: data }).json<Portfolio>()
 }

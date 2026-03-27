@@ -76,11 +76,11 @@
       display: grid;
       grid-template-columns: repeat(3, 1fr);
       grid-auto-flow: row dense;
-      gap: 4px;
+      gap: {{.GapPx}}px;
     }
 
     .grid-item {
-      background: #111;
+      background: #fff;
       overflow: hidden;
     }
 
@@ -119,12 +119,11 @@
     {{if gt (len $.Pages) 1}}<h2 class="page-section-title">{{$page.Title}}</h2>{{end}}
     <div class="grid">
       {{range $page.Images}}
-      <div class="grid-item" style="grid-column:span {{.ColSpan}};{{if and (gt .Width 0) (gt .Height 0)}}aspect-ratio:{{.Width}}/{{.Height}};{{end}}">
+      <div class="grid-item" style="grid-column:span {{.ColSpan}};grid-row:span {{.RowSpan}};aspect-ratio:{{.ColSpan}}/{{.RowSpan}};padding:{{$.MattePx}}px;">
         <img
           src="{{.SrcURL}}"
           alt="{{.Filename}}"
           loading="lazy"
-          {{if and (gt .Width 0) (gt .Height 0)}}width="{{.Width}}" height="{{.Height}}"{{end}}
         >
       </div>
       {{end}}

@@ -51,6 +51,8 @@ type pageTemplateData struct {
 type portfolioTemplateData struct {
 	Title       string
 	Description string
+	GapPx       int32
+	MattePx     int32
 	Pages       []pageTemplateData
 }
 
@@ -122,6 +124,8 @@ func (h *PageHandler) ServePortfolio(w http.ResponseWriter, r *http.Request) {
 	data := portfolioTemplateData{
 		Title:       portfolio.Title,
 		Description: desc,
+		GapPx:       portfolio.GapPx,
+		MattePx:     portfolio.MattePx,
 		Pages:       pageData,
 	}
 

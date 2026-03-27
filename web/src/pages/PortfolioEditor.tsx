@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -40,11 +40,14 @@ import type { Image } from '../lib/types'
 interface SortableItemProps {
   item: PortfolioImage
   localColSpan: number
+  localRowSpan: number
+  matte: number
   onRemove: () => void
   onResizeStart: (e: React.MouseEvent, item: PortfolioImage) => void
+  onRowResizeStart: (e: React.MouseEvent, item: PortfolioImage) => void
 }
 
-function SortableItem({ item, localColSpan, onRemove, onResizeStart }: SortableItemProps) {
+function SortableItem({ item, localColSpan, localRowSpan, matte, onRemove, onResizeStart, onRowResizeStart }: SortableItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: item.id,
   })
@@ -53,20 +56,18 @@ function SortableItem({ item, localColSpan, onRemove, onResizeStart }: SortableI
     transform: CSS.Transform.toString(transform),
     transition,
     gridColumn: `span ${localColSpan}`,
+    gridRow: `span ${localRowSpan}`,
     opacity: isDragging ? 0.4 : 1,
     position: 'relative',
   }
 
-  const aspectRatio =
-    item.width && item.height ? `${item.width} / ${item.height}` : '1 / 1'
-
   return (
-    <div ref={setNodeRef} style={style} className="group relative rounded-lg overflow-hidden bg-gray-100">
+    <div ref={setNodeRef} style={style} className="group relative rounded-lg overflow-hidden bg-white">
       {/* Drag handle covers the image */}
       <div
         {...attributes}
         {...listeners}
-        style={{ aspectRatio, cursor: isDragging ? 'grabbing' : 'grab' }}
+        style={{ aspectRatio: `${localColSpan} / ${localRowSpan}`, cursor: isDragging ? 'grabbing' : 'grab', padding: `${matte}px` }}
         className="w-full"
       >
         <img
@@ -87,18 +88,27 @@ function SortableItem({ item, localColSpan, onRemove, onResizeStart }: SortableI
         ×
       </button>
 
-      {/* Resize handle */}
+      {/* Horizontal resize handle (col span) */}
       <div
         onMouseDown={(e) => onResizeStart(e, item)}
         className="absolute bottom-1.5 right-1.5 bg-black/50 hover:bg-indigo-600 text-white rounded px-1.5 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-ew-resize select-none z-10"
-        title="Drag to resize"
+        title="Drag left/right to resize width"
       >
         ⟺
       </div>
 
-      {/* Col span indicator */}
+      {/* Vertical resize handle (row span) */}
+      <div
+        onMouseDown={(e) => onRowResizeStart(e, item)}
+        className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-black/50 hover:bg-indigo-600 text-white rounded px-1.5 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-ns-resize select-none z-10"
+        title="Drag up/down to resize height"
+      >
+        ↕
+      </div>
+
+      {/* Span indicator */}
       <div className="absolute bottom-1.5 left-1.5 bg-black/40 text-white text-xs rounded px-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {localColSpan}×
+        {localColSpan}×{localRowSpan}
       </div>
     </div>
   )
@@ -123,6 +133,8 @@ export function PortfolioEditor() {
   const [slug, setSlug] = useState('')
   const [description, setDescription] = useState('')
   const [published, setPublished] = useState(false)
+  const [gap, setGap] = useState(4)
+  const [matte, setMatte] = useState(0)
   const [slugEdited, setSlugEdited] = useState(false)
 
   useEffect(() => {
@@ -131,13 +143,15 @@ export function PortfolioEditor() {
       setSlug(portfolio.slug)
       setDescription(portfolio.description ?? '')
       setPublished(portfolio.published)
+      setGap(portfolio.gap_px ?? 4)
+      setMatte(portfolio.matte_px ?? 0)
       setSlugEdited(true)
     }
   }, [portfolio])
 
   const saveMutation = useMutation({
     mutationFn: () =>
-      updatePortfolio(id!, { title, slug, description: description || undefined, published }),
+      updatePortfolio(id!, { title, slug, description: description || undefined, published, gap_px: gap, matte_px: matte }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
   })
 
@@ -199,9 +213,11 @@ export function PortfolioEditor() {
     .map((oid) => pageImages.find((pi) => pi.id === oid))
     .filter(Boolean) as PortfolioImage[]
 
-  // Local col_span overrides for optimistic resize preview
+  // Local span overrides for optimistic resize preview
   const [localColSpans, setLocalColSpans] = useState<Record<string, number>>({})
+  const [localRowSpans, setLocalRowSpans] = useState<Record<string, number>>({})
   const getColSpan = (item: PortfolioImage) => localColSpans[item.id] ?? item.col_span
+  const getRowSpan = (item: PortfolioImage) => localRowSpans[item.id] ?? item.row_span
 
   // --- Library images ---
   const { data: allImagesData } = useQuery({
@@ -225,8 +241,8 @@ export function PortfolioEditor() {
   })
 
   const layoutMutation = useMutation({
-    mutationFn: ({ itemId, col_span }: { itemId: string; col_span: number }) =>
-      updateImageLayout(id!, selectedPageId!, itemId, { col_span, row_span: 1 }),
+    mutationFn: ({ itemId, col_span, row_span }: { itemId: string; col_span: number; row_span: number }) =>
+      updateImageLayout(id!, selectedPageId!, itemId, { col_span, row_span }),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ['page-images', id, selectedPageId] }),
   })
@@ -266,49 +282,64 @@ export function PortfolioEditor() {
   }
 
   // --- Resize drag ---
-  const resizeState = useRef<{
-    itemId: string
-    startX: number
-    startColSpan: number
-  } | null>(null)
+  function handleResizeStart(e: React.MouseEvent, item: PortfolioImage) {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startColSpan = getColSpan(item)
+    const capturedRowSpan = getRowSpan(item)
+    let currentColSpan = startColSpan
 
-  const handleResizeStart = useCallback(
-    (e: React.MouseEvent, item: PortfolioImage) => {
-      e.preventDefault()
-      e.stopPropagation()
-      resizeState.current = {
-        itemId: item.id,
-        startX: e.clientX,
-        startColSpan: getColSpan(item),
+    function onMouseMove(ev: MouseEvent) {
+      if (!canvasRef.current) return
+      const canvasWidth = canvasRef.current.offsetWidth
+      const colWidth = canvasWidth / 3
+      const delta = ev.clientX - startX
+      const newSpan = Math.max(1, Math.min(3, startColSpan + Math.round(delta / colWidth)))
+      currentColSpan = newSpan
+      setLocalColSpans((prev) => ({ ...prev, [item.id]: newSpan }))
+    }
+
+    function onMouseUp() {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      if (currentColSpan !== startColSpan) {
+        layoutMutation.mutate({ itemId: item.id, col_span: currentColSpan, row_span: capturedRowSpan })
       }
+    }
 
-      function onMouseMove(ev: MouseEvent) {
-        if (!resizeState.current || !canvasRef.current) return
-        const canvasWidth = canvasRef.current.offsetWidth
-        const colWidth = canvasWidth / 3
-        const delta = ev.clientX - resizeState.current.startX
-        const newSpan = Math.max(1, Math.min(3, resizeState.current.startColSpan + Math.round(delta / colWidth)))
-        setLocalColSpans((prev) => ({ ...prev, [resizeState.current!.itemId]: newSpan }))
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
+
+  function handleRowResizeStart(e: React.MouseEvent, item: PortfolioImage) {
+    e.preventDefault()
+    e.stopPropagation()
+    const startY = e.clientY
+    const startRowSpan = getRowSpan(item)
+    const capturedColSpan = getColSpan(item)
+    let currentRowSpan = startRowSpan
+
+    function onMouseMove(ev: MouseEvent) {
+      if (!canvasRef.current) return
+      const rowUnit = canvasRef.current.offsetWidth / 3
+      const delta = ev.clientY - startY
+      const newSpan = Math.max(1, Math.min(3, startRowSpan + Math.round(delta / rowUnit)))
+      currentRowSpan = newSpan
+      setLocalRowSpans((prev) => ({ ...prev, [item.id]: newSpan }))
+    }
+
+    function onMouseUp() {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      if (currentRowSpan !== startRowSpan) {
+        layoutMutation.mutate({ itemId: item.id, col_span: capturedColSpan, row_span: currentRowSpan })
       }
+    }
 
-      function onMouseUp() {
-        if (!resizeState.current) return
-        const { itemId, startColSpan } = resizeState.current
-        const newSpan = localColSpans[itemId] ?? startColSpan
-        resizeState.current = null
-        window.removeEventListener('mousemove', onMouseMove)
-        window.removeEventListener('mouseup', onMouseUp)
-        if (newSpan !== startColSpan) {
-          layoutMutation.mutate({ itemId, col_span: newSpan })
-        }
-      }
-
-      window.addEventListener('mousemove', onMouseMove)
-      window.addEventListener('mouseup', onMouseUp)
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [localColSpans]
-  )
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+  }
 
   function handleTitleChange(val: string) {
     setTitle(val)
@@ -407,6 +438,32 @@ export function PortfolioEditor() {
                   onChange={(e) => setDescription(e.target.value)}
                   rows={2}
                   className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Gap <span className="text-gray-400 font-normal">{gap}px</span>
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={32}
+                  value={gap}
+                  onChange={(e) => setGap(Number(e.target.value))}
+                  className="w-full accent-indigo-600"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Matte <span className="text-gray-400 font-normal">{matte}px</span>
+                </label>
+                <input
+                  type="range"
+                  min={0}
+                  max={64}
+                  value={matte}
+                  onChange={(e) => setMatte(Number(e.target.value))}
+                  className="w-full accent-indigo-600"
                 />
               </div>
               <div className="flex items-center gap-2">
@@ -514,7 +571,7 @@ export function PortfolioEditor() {
                     ({pageImages.length} {pageImages.length === 1 ? 'image' : 'images'})
                   </span>
                 </h2>
-                <p className="text-xs text-gray-400">Drag images from the library → drop here to add. Drag to reorder. ⟺ to resize.</p>
+                <p className="text-xs text-gray-400">Drag images from the library → drop here to add. Drag to reorder. ⟺ width, ↕ height.</p>
               </div>
 
               {/* Drop zone wrapper */}
@@ -541,16 +598,19 @@ export function PortfolioEditor() {
                     <SortableContext items={localOrder} strategy={rectSortingStrategy}>
                       <div
                         ref={canvasRef}
-                        className="p-4 grid gap-2"
-                        style={{ gridTemplateColumns: 'repeat(3, 1fr)', gridAutoFlow: 'row dense' }}
+                        className="p-4 grid"
+                        style={{ gridTemplateColumns: 'repeat(3, 1fr)', gridAutoFlow: 'row dense', gap: `${gap}px` }}
                       >
                         {orderedItems.map((item) => (
                           <SortableItem
                             key={item.id}
                             item={item}
                             localColSpan={getColSpan(item)}
+                            localRowSpan={getRowSpan(item)}
+                            matte={matte}
                             onRemove={() => removeMutation.mutate(item.id)}
                             onResizeStart={handleResizeStart}
+                            onRowResizeStart={handleRowResizeStart}
                           />
                         ))}
                       </div>

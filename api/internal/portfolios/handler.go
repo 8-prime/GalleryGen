@@ -77,6 +77,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Title       string  `json:"title"`
 		Description *string `json:"description"`
 		Slug        string  `json:"slug"`
+		GapPx       int32   `json:"gap_px"`
+		MattePx     int32   `json:"matte_px"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -89,6 +91,12 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if body.Slug == "" {
 		body.Slug = slugify(body.Title)
 	}
+	if body.GapPx < 0 {
+		body.GapPx = 0
+	}
+	if body.MattePx < 0 {
+		body.MattePx = 0
+	}
 
 	var desc pgtype.Text
 	if body.Description != nil {
@@ -99,6 +107,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Slug:        body.Slug,
 		Title:       body.Title,
 		Description: desc,
+		GapPx:       body.GapPx,
+		MattePx:     body.MattePx,
 	})
 	if err != nil {
 		slog.ErrorContext(r.Context(), "portfolios.Create: db insert failed", "user_id", userIDStr, "slug", body.Slug, "err", err)
@@ -130,6 +140,8 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description"`
 		Slug        string  `json:"slug"`
 		Published   bool    `json:"published"`
+		GapPx       int32   `json:"gap_px"`
+		MattePx     int32   `json:"matte_px"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
@@ -141,6 +153,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.Slug == "" {
 		body.Slug = slugify(body.Title)
+	}
+	if body.GapPx < 0 {
+		body.GapPx = 0
+	}
+	if body.MattePx < 0 {
+		body.MattePx = 0
 	}
 
 	var desc pgtype.Text
@@ -155,6 +173,8 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		Title:       body.Title,
 		Description: desc,
 		Published:   pgtype.Bool{Bool: body.Published, Valid: true},
+		GapPx:       body.GapPx,
+		MattePx:     body.MattePx,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

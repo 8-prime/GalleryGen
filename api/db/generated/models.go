@@ -54,6 +54,8 @@ type Portfolio struct {
 	Title       string             `json:"title"`
 	Description pgtype.Text        `json:"description"`
 	Published   pgtype.Bool        `json:"published"`
+	GapPx       int32              `json:"gap_px"`
+	MattePx     int32              `json:"matte_px"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
