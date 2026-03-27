@@ -17,3 +17,7 @@ DELETE FROM grid_items WHERE id = $1 AND page_id = $2;
 -- name: UpdateGridItem :one
 UPDATE grid_items SET col_span = $2, row_span = $3
 WHERE id = $1 AND page_id = $4 RETURNING *;
+
+-- name: UpdateGridItemSortOrder :one
+UPDATE grid_items SET sort_order = $2
+WHERE id = $1 AND page_id = $3 RETURNING *;

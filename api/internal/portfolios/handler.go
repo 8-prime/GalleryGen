@@ -508,6 +508,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	// Page-specific image endpoints
 	r.Get("/{id}/pages/{pageId}/images", h.ListPageImages)
 	r.Post("/{id}/pages/{pageId}/images", h.AddPageImage)
+	r.Post("/{id}/pages/{pageId}/images/reorder", h.ReorderPageImages)
 	r.Delete("/{id}/pages/{pageId}/images/{itemId}", h.RemovePageImage)
 	r.Patch("/{id}/pages/{pageId}/images/{itemId}", h.UpdateImageLayout)
 }

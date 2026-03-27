@@ -164,6 +164,12 @@ export function updateImageLayout(
     .json<PortfolioImage>()
 }
 
+export function reorderPageImages(portfolioId: string, pageId: string, ids: string[]): Promise<void> {
+  return api
+    .post(`portfolios/${portfolioId}/pages/${pageId}/images/reorder`, { json: { ids } })
+    .then(() => undefined)
+}
+
 export function getPublicPortfolio(slug: string): Promise<PublicPortfolio> {
   return fetch(`/api/public/portfolios/${slug}`).then((r) => {
     if (!r.ok) throw new Error('not found')

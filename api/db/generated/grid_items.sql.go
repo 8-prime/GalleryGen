@@ -160,3 +160,30 @@ func (q *Queries) UpdateGridItem(ctx context.Context, arg UpdateGridItemParams) 
 	)
 	return i, err
 }
+
+const updateGridItemSortOrder = `-- name: UpdateGridItemSortOrder :one
+UPDATE grid_items SET sort_order = $2
+WHERE id = $1 AND page_id = $3 RETURNING id, page_id, image_id, col_start, row_start, col_span, row_span, sort_order
+`
+
+type UpdateGridItemSortOrderParams struct {
+	ID        pgtype.UUID `json:"id"`
+	SortOrder int32       `json:"sort_order"`
+	PageID    pgtype.UUID `json:"page_id"`
+}
+
+func (q *Queries) UpdateGridItemSortOrder(ctx context.Context, arg UpdateGridItemSortOrderParams) (GridItem, error) {
+	row := q.db.QueryRow(ctx, updateGridItemSortOrder, arg.ID, arg.SortOrder, arg.PageID)
+	var i GridItem
+	err := row.Scan(
+		&i.ID,
+		&i.PageID,
+		&i.ImageID,
+		&i.ColStart,
+		&i.RowStart,
+		&i.ColSpan,
+		&i.RowSpan,
+		&i.SortOrder,
+	)
+	return i, err
+}

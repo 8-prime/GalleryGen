@@ -74,15 +74,20 @@
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      grid-auto-rows: 200px;
+      grid-template-columns: repeat(3, 1fr);
+      grid-auto-flow: row dense;
       gap: 4px;
     }
 
-    .grid img {
+    .grid-item {
+      background: #111;
+      overflow: hidden;
+    }
+
+    .grid-item img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
     }
 
@@ -114,13 +119,14 @@
     {{if gt (len $.Pages) 1}}<h2 class="page-section-title">{{$page.Title}}</h2>{{end}}
     <div class="grid">
       {{range $page.Images}}
-      <img
-        src="/media/{{.ImageID}}"
-        alt="{{.Filename}}"
-        loading="lazy"
-        style="grid-column:{{.ColStart}}/span {{.ColSpan}};grid-row:{{.RowStart}}/span {{.RowSpan}};"
-        {{if and (gt .Width 0) (gt .Height 0)}}width="{{.Width}}" height="{{.Height}}"{{end}}
-      >
+      <div class="grid-item" style="grid-column:span {{.ColSpan}};{{if and (gt .Width 0) (gt .Height 0)}}aspect-ratio:{{.Width}}/{{.Height}};{{end}}">
+        <img
+          src="{{.SrcURL}}"
+          alt="{{.Filename}}"
+          loading="lazy"
+          {{if and (gt .Width 0) (gt .Height 0)}}width="{{.Width}}" height="{{.Height}}"{{end}}
+        >
+      </div>
       {{end}}
     </div>
   </section>

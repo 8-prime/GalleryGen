@@ -94,11 +94,6 @@ func main() {
 	authSvc := auth.NewService(queries, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authSvc)
 	portfolioHandler := portfolios.NewHandler(queries)
-	portfolioPageHandler, err := portfolios.NewPageHandler(queries)
-	if err != nil {
-		slog.Error("failed to load portfolio templates", "err", err)
-		os.Exit(1)
-	}
 
 	imgproxyCfg := &images.ImgproxyConfig{
 		Enabled: cfg.ImgproxyEnabled,
@@ -106,6 +101,13 @@ func main() {
 		Salt:    cfg.ImgproxySalt,
 		BaseURL: cfg.ImgproxyBaseURL,
 	}
+
+	portfolioPageHandler, err := portfolios.NewPageHandler(queries, imgproxyCfg)
+	if err != nil {
+		slog.Error("failed to load portfolio templates", "err", err)
+		os.Exit(1)
+	}
+
 	storage := images.NewLocalStorage(cfg.StoragePath)
 	imageSvc := images.NewService(queries, storage, imgproxyCfg)
 	imageHandler := images.NewHandler(imageSvc)

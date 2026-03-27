@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/galleryGen/api/db/generated"
+	"github.com/galleryGen/api/internal/images"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 )
@@ -17,20 +18,21 @@ var templateFS embed.FS
 
 // PageHandler renders published portfolios as server-side HTML.
 type PageHandler struct {
-	queries *generated.Queries
-	tmpl    *template.Template
+	queries  *generated.Queries
+	tmpl     *template.Template
+	imgproxy *images.ImgproxyConfig
 }
 
-func NewPageHandler(queries *generated.Queries) (*PageHandler, error) {
+func NewPageHandler(queries *generated.Queries, imgproxy *images.ImgproxyConfig) (*PageHandler, error) {
 	tmpl, err := template.ParseFS(templateFS, "templates/portfolio.html")
 	if err != nil {
 		return nil, err
 	}
-	return &PageHandler{queries: queries, tmpl: tmpl}, nil
+	return &PageHandler{queries: queries, tmpl: tmpl, imgproxy: imgproxy}, nil
 }
 
 type imageTemplateData struct {
-	ImageID  string
+	SrcURL   string
 	ColStart int32
 	ColSpan  int32
 	RowStart int32
@@ -81,7 +83,7 @@ func (h *PageHandler) ServePortfolio(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
-		images := make([]imageTemplateData, len(rows))
+		imgs := make([]imageTemplateData, len(rows))
 		for i, row := range rows {
 			var w2, h2 int32
 			if row.Width.Valid {
@@ -90,8 +92,12 @@ func (h *PageHandler) ServePortfolio(w http.ResponseWriter, r *http.Request) {
 			if row.Height.Valid {
 				h2 = row.Height.Int32
 			}
-			images[i] = imageTemplateData{
-				ImageID:  row.ImageID.String(),
+			srcURL := "/media/" + row.ImageID.String()
+			if h.imgproxy != nil && h.imgproxy.Enabled {
+				srcURL = "/img" + h.imgproxy.SignPath(row.StorageKey, 1600, 0)
+			}
+			imgs[i] = imageTemplateData{
+				SrcURL:   srcURL,
 				ColStart: row.ColStart,
 				ColSpan:  row.ColSpan,
 				RowStart: row.RowStart,
@@ -104,7 +110,7 @@ func (h *PageHandler) ServePortfolio(w http.ResponseWriter, r *http.Request) {
 		pageData = append(pageData, pageTemplateData{
 			Slug:   page.Slug,
 			Title:  page.Title,
-			Images: images,
+			Images: imgs,
 		})
 	}
 

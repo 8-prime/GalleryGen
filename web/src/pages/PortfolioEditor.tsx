@@ -1,6 +1,21 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  rectSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { api } from '../lib/api'
 import {
   updatePortfolio,
@@ -11,6 +26,7 @@ import {
   addImageToPage,
   removeImageFromPage,
   updateImageLayout,
+  reorderPageImages,
   slugify,
   type Portfolio,
   type Page,
@@ -19,18 +35,84 @@ import {
 import { listImages } from '../lib/images'
 import type { Image } from '../lib/types'
 
-const SIZE_OPTIONS = [
-  { label: '1×1', col_span: 1, row_span: 1 },
-  { label: '2×1', col_span: 2, row_span: 1 },
-  { label: '1×2', col_span: 1, row_span: 2 },
-  { label: '2×2', col_span: 2, row_span: 2 },
-]
+// --- Sortable canvas item ---
+
+interface SortableItemProps {
+  item: PortfolioImage
+  localColSpan: number
+  onRemove: () => void
+  onResizeStart: (e: React.MouseEvent, item: PortfolioImage) => void
+}
+
+function SortableItem({ item, localColSpan, onRemove, onResizeStart }: SortableItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.id,
+  })
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    gridColumn: `span ${localColSpan}`,
+    opacity: isDragging ? 0.4 : 1,
+    position: 'relative',
+  }
+
+  const aspectRatio =
+    item.width && item.height ? `${item.width} / ${item.height}` : '1 / 1'
+
+  return (
+    <div ref={setNodeRef} style={style} className="group relative rounded-lg overflow-hidden bg-gray-100">
+      {/* Drag handle covers the image */}
+      <div
+        {...attributes}
+        {...listeners}
+        style={{ aspectRatio, cursor: isDragging ? 'grabbing' : 'grab' }}
+        className="w-full"
+      >
+        <img
+          src={item.thumb_url}
+          alt={item.filename}
+          className="w-full h-full"
+          style={{ objectFit: 'contain', display: 'block' }}
+          draggable={false}
+        />
+      </div>
+
+      {/* Remove button */}
+      <button
+        onClick={onRemove}
+        className="absolute top-1.5 right-1.5 bg-black/60 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+        title="Remove"
+      >
+        ×
+      </button>
+
+      {/* Resize handle */}
+      <div
+        onMouseDown={(e) => onResizeStart(e, item)}
+        className="absolute bottom-1.5 right-1.5 bg-black/50 hover:bg-indigo-600 text-white rounded px-1.5 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-ew-resize select-none z-10"
+        title="Drag to resize"
+      >
+        ⟺
+      </div>
+
+      {/* Col span indicator */}
+      <div className="absolute bottom-1.5 left-1.5 bg-black/40 text-white text-xs rounded px-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {localColSpan}×
+      </div>
+    </div>
+  )
+}
+
+// --- Main editor ---
 
 export function PortfolioEditor() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const canvasRef = useRef<HTMLDivElement>(null)
 
+  // --- Portfolio metadata ---
   const { data: portfolio, isLoading: loadingPortfolio } = useQuery({
     queryKey: ['portfolios'],
     queryFn: () => api.get('portfolios').json<Portfolio[]>(),
@@ -56,12 +138,10 @@ export function PortfolioEditor() {
   const saveMutation = useMutation({
     mutationFn: () =>
       updatePortfolio(id!, { title, slug, description: description || undefined, published }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['portfolios'] })
-    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['portfolios'] }),
   })
 
-  // Pages
+  // --- Pages ---
   const { data: pages = [] } = useQuery({
     queryKey: ['pages', id],
     queryFn: () => listPages(id!),
@@ -70,7 +150,6 @@ export function PortfolioEditor() {
 
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null)
 
-  // Auto-select first page
   useEffect(() => {
     if (pages.length > 0 && !selectedPageId) {
       setSelectedPageId(pages[0].id)
@@ -103,42 +182,133 @@ export function PortfolioEditor() {
     },
   })
 
-  // Images for selected page
+  // --- Page images ---
   const { data: pageImages = [] } = useQuery({
     queryKey: ['page-images', id, selectedPageId],
     queryFn: () => listPageImages(id!, selectedPageId!),
     enabled: !!selectedPageId,
   })
 
+  // Local ordering for optimistic DnD updates
+  const [localOrder, setLocalOrder] = useState<string[]>([])
+  useEffect(() => {
+    setLocalOrder(pageImages.map((pi) => pi.id))
+  }, [pageImages])
+
+  const orderedItems = localOrder
+    .map((oid) => pageImages.find((pi) => pi.id === oid))
+    .filter(Boolean) as PortfolioImage[]
+
+  // Local col_span overrides for optimistic resize preview
+  const [localColSpans, setLocalColSpans] = useState<Record<string, number>>({})
+  const getColSpan = (item: PortfolioImage) => localColSpans[item.id] ?? item.col_span
+
+  // --- Library images ---
   const { data: allImagesData } = useQuery({
     queryKey: ['images', 0],
     queryFn: () => listImages(200, 0),
   })
   const allImages = allImagesData?.images ?? []
+  const addedImageIds = new Set(pageImages.map((pi: PortfolioImage) => pi.image_id))
 
+  // --- Mutations ---
   const addMutation = useMutation({
     mutationFn: (imageId: string) => addImageToPage(id!, selectedPageId!, imageId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['page-images', id, selectedPageId] })
-    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['page-images', id, selectedPageId] }),
   })
 
   const removeMutation = useMutation({
     mutationFn: (itemId: string) => removeImageFromPage(id!, selectedPageId!, itemId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['page-images', id, selectedPageId] })
-    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['page-images', id, selectedPageId] }),
   })
 
   const layoutMutation = useMutation({
-    mutationFn: ({ itemId, col_span, row_span }: { itemId: string; col_span: number; row_span: number }) =>
-      updateImageLayout(id!, selectedPageId!, itemId, { col_span, row_span }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['page-images', id, selectedPageId] })
-    },
+    mutationFn: ({ itemId, col_span }: { itemId: string; col_span: number }) =>
+      updateImageLayout(id!, selectedPageId!, itemId, { col_span, row_span: 1 }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['page-images', id, selectedPageId] }),
   })
 
-  const addedImageIds = new Set(pageImages.map((pi: PortfolioImage) => pi.image_id))
+  const reorderMutation = useMutation({
+    mutationFn: (ids: string[]) => reorderPageImages(id!, selectedPageId!, ids),
+  })
+
+  // --- DnD (reorder within canvas) ---
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = localOrder.indexOf(active.id as string)
+    const newIndex = localOrder.indexOf(over.id as string)
+    const newOrder = arrayMove(localOrder, oldIndex, newIndex)
+    setLocalOrder(newOrder)
+    reorderMutation.mutate(newOrder)
+  }
+
+  // --- Library drag → canvas (HTML5 DnD) ---
+  const [isDragOver, setIsDragOver] = useState(false)
+
+  function handleLibraryDragStart(e: React.DragEvent, imageId: string) {
+    e.dataTransfer.setData('imageId', imageId)
+    e.dataTransfer.effectAllowed = 'copy'
+  }
+
+  function handleCanvasDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDragOver(false)
+    const imageId = e.dataTransfer.getData('imageId')
+    if (imageId && selectedPageId && !addedImageIds.has(imageId)) {
+      addMutation.mutate(imageId)
+    }
+  }
+
+  // --- Resize drag ---
+  const resizeState = useRef<{
+    itemId: string
+    startX: number
+    startColSpan: number
+  } | null>(null)
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent, item: PortfolioImage) => {
+      e.preventDefault()
+      e.stopPropagation()
+      resizeState.current = {
+        itemId: item.id,
+        startX: e.clientX,
+        startColSpan: getColSpan(item),
+      }
+
+      function onMouseMove(ev: MouseEvent) {
+        if (!resizeState.current || !canvasRef.current) return
+        const canvasWidth = canvasRef.current.offsetWidth
+        const colWidth = canvasWidth / 3
+        const delta = ev.clientX - resizeState.current.startX
+        const newSpan = Math.max(1, Math.min(3, resizeState.current.startColSpan + Math.round(delta / colWidth)))
+        setLocalColSpans((prev) => ({ ...prev, [resizeState.current!.itemId]: newSpan }))
+      }
+
+      function onMouseUp() {
+        if (!resizeState.current) return
+        const { itemId, startColSpan } = resizeState.current
+        const newSpan = localColSpans[itemId] ?? startColSpan
+        resizeState.current = null
+        window.removeEventListener('mousemove', onMouseMove)
+        window.removeEventListener('mouseup', onMouseUp)
+        if (newSpan !== startColSpan) {
+          layoutMutation.mutate({ itemId, col_span: newSpan })
+        }
+      }
+
+      window.addEventListener('mousemove', onMouseMove)
+      window.addEventListener('mouseup', onMouseUp)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [localColSpans]
+  )
 
   function handleTitleChange(val: string) {
     setTitle(val)
@@ -167,15 +337,17 @@ export function PortfolioEditor() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+    <div className="flex flex-col h-screen bg-gray-100">
+      {/* Header */}
+      <header className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <button
           onClick={() => navigate('/app/dashboard')}
           className="text-sm text-gray-500 hover:text-gray-900"
         >
           ← Portfolios
         </button>
-        <div className="flex items-center gap-3">
+        <span className="text-sm font-medium text-gray-700 truncate mx-4">{title}</span>
+        <div className="flex items-center gap-3 flex-shrink-0">
           {portfolio.published && (
             <a
               href={`/p/${portfolio.slug}`}
@@ -183,263 +355,272 @@ export function PortfolioEditor() {
               rel="noreferrer"
               className="text-sm text-indigo-600 hover:underline"
             >
-              View published ↗
+              View ↗
             </a>
           )}
-          {saveMutation.isSuccess && (
-            <span className="text-sm text-green-600">Saved</span>
-          )}
+          {saveMutation.isSuccess && <span className="text-sm text-green-600">Saved</span>}
           <button
             form="editor-form"
             type="submit"
             disabled={saveMutation.isPending}
-            className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            className="px-3 py-1.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
           >
             {saveMutation.isPending ? 'Saving…' : 'Save'}
           </button>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left panel: settings + pages */}
-          <div className="lg:col-span-1 space-y-4">
-            {/* Settings */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h2 className="text-sm font-semibold text-gray-900 mb-4">Settings</h2>
-              <form id="editor-form" onSubmit={handleSave} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-                  <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => handleTitleChange(e.target.value)}
-                    required
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Slug</label>
-                  <input
-                    type="text"
-                    value={slug}
-                    onChange={(e) => { setSlug(e.target.value); setSlugEdited(true) }}
-                    required
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Description <span className="text-gray-400 font-normal">(optional)</span>
-                  </label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={3}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    id="published"
-                    type="checkbox"
-                    checked={published}
-                    onChange={(e) => setPublished(e.target.checked)}
-                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="published" className="text-sm text-gray-700">Published</label>
-                </div>
-              </form>
-            </div>
-
-            {/* Pages */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h2 className="text-sm font-semibold text-gray-900 mb-3">Pages</h2>
-              <ul className="space-y-1 mb-3">
-                {pages.map((page: Page) => (
-                  <li key={page.id} className="flex items-center gap-1">
-                    <button
-                      onClick={() => setSelectedPageId(page.id)}
-                      className={`flex-1 text-left text-sm px-2 py-1.5 rounded-md truncate ${
-                        selectedPageId === page.id
-                          ? 'bg-indigo-50 text-indigo-700 font-medium'
-                          : 'text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      {page.title}
-                      {page.type === 'main' && (
-                        <span className="ml-1 text-xs text-gray-400">(main)</span>
-                      )}
-                    </button>
-                    {page.type !== 'main' && (
-                      <button
-                        onClick={() => {
-                          if (confirm(`Delete page "${page.title}"?`)) {
-                            deletePageMutation.mutate(page.id)
-                          }
-                        }}
-                        className="text-gray-400 hover:text-red-500 text-xs px-1"
-                        title="Delete page"
-                      >
-                        ×
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-
-              {showNewPage ? (
-                <div className="space-y-2">
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="Page title"
-                    value={newPageTitle}
-                    onChange={(e) => setNewPageTitle(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && newPageTitle.trim()) createPageMutation.mutate()
-                      if (e.key === 'Escape') setShowNewPage(false)
-                    }}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => createPageMutation.mutate()}
-                      disabled={!newPageTitle.trim() || createPageMutation.isPending}
-                      className="flex-1 text-sm px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
-                    >
-                      Add
-                    </button>
-                    <button
-                      onClick={() => setShowNewPage(false)}
-                      className="flex-1 text-sm px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowNewPage(true)}
-                  className="w-full text-sm text-indigo-600 hover:text-indigo-800 text-left"
-                >
-                  + Add page
-                </button>
-              )}
-            </div>
+      {/* Body: 3-panel layout */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left panel: settings + pages */}
+        <aside className="w-60 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
+          {/* Settings */}
+          <div className="p-4 border-b border-gray-100">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Settings</h2>
+            <form id="editor-form" onSubmit={handleSave} className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => handleTitleChange(e.target.value)}
+                  required
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Slug</label>
+                <input
+                  type="text"
+                  value={slug}
+                  onChange={(e) => { setSlug(e.target.value); setSlugEdited(true) }}
+                  required
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Description <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  id="published"
+                  type="checkbox"
+                  checked={published}
+                  onChange={(e) => setPublished(e.target.checked)}
+                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <label htmlFor="published" className="text-sm text-gray-700">Published</label>
+              </div>
+            </form>
           </div>
 
-          {/* Right panel: page images + add images */}
-          <div className="lg:col-span-3 space-y-6">
-            {/* Images in selected page */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h2 className="text-sm font-semibold text-gray-900 mb-4">
-                {selectedPage ? `"${selectedPage.title}" — images` : 'Images'}
-                <span className="ml-2 text-gray-400 font-normal">({pageImages.length})</span>
-              </h2>
-              {!selectedPageId ? (
-                <p className="text-sm text-gray-400">Select a page to manage its images.</p>
-              ) : pageImages.length === 0 ? (
-                <p className="text-sm text-gray-400">No images yet. Add some below.</p>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                  {pageImages.map((pi: PortfolioImage) => {
-                    const currentSize = SIZE_OPTIONS.find(
-                      (s) => s.col_span === pi.col_span && s.row_span === pi.row_span
-                    )
-                    return (
-                      <div key={pi.id} className="relative group">
-                        <div className="aspect-square">
-                          <img
-                            src={pi.thumb_url}
-                            alt={pi.filename}
-                            className="w-full h-full object-cover rounded-lg"
-                          />
-                        </div>
-                        {/* Layout selector */}
-                        <div className="mt-1 flex gap-1 flex-wrap">
-                          {SIZE_OPTIONS.map((opt) => (
-                            <button
-                              key={opt.label}
-                              onClick={() =>
-                                layoutMutation.mutate({
-                                  itemId: pi.id,
-                                  col_span: opt.col_span,
-                                  row_span: opt.row_span,
-                                })
-                              }
-                              className={`text-xs px-1.5 py-0.5 rounded border ${
-                                currentSize?.label === opt.label
-                                  ? 'bg-indigo-600 text-white border-indigo-600'
-                                  : 'border-gray-300 text-gray-600 hover:border-indigo-400'
-                              }`}
-                              title={`Set size to ${opt.label}`}
-                            >
-                              {opt.label}
-                            </button>
-                          ))}
-                        </div>
-                        <button
-                          onClick={() => removeMutation.mutate(pi.id)}
-                          disabled={removeMutation.isPending}
-                          className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
-                          title="Remove from page"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Add images */}
-            <div className="bg-white border border-gray-200 rounded-lg p-5">
-              <h2 className="text-sm font-semibold text-gray-900 mb-4">Add images</h2>
-              {!selectedPageId ? (
-                <p className="text-sm text-gray-400">Select a page first.</p>
-              ) : allImages.length === 0 ? (
-                <p className="text-sm text-gray-400">
-                  No images in your library.{' '}
+          {/* Pages */}
+          <div className="p-4 flex-1">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Pages</h2>
+            <ul className="space-y-0.5 mb-3">
+              {pages.map((page: Page) => (
+                <li key={page.id} className="flex items-center gap-1">
                   <button
-                    onClick={() => navigate('/app/images')}
-                    className="text-indigo-600 hover:underline"
+                    onClick={() => setSelectedPageId(page.id)}
+                    className={`flex-1 text-left text-sm px-2 py-1.5 rounded-md truncate ${
+                      selectedPageId === page.id
+                        ? 'bg-indigo-50 text-indigo-700 font-medium'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
                   >
-                    Upload some
+                    {page.title}
+                    {page.type === 'main' && (
+                      <span className="ml-1 text-xs text-gray-400">(main)</span>
+                    )}
                   </button>
-                  .
-                </p>
-              ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
-                  {allImages.map((img: Image) => {
-                    const inPage = addedImageIds.has(img.id)
-                    return (
-                      <div key={img.id} className="relative group aspect-square">
+                  {page.type !== 'main' && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete page "${page.title}"?`)) {
+                          deletePageMutation.mutate(page.id)
+                        }
+                      }}
+                      className="text-gray-400 hover:text-red-500 text-xs px-1 flex-shrink-0"
+                      title="Delete page"
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            {showNewPage ? (
+              <div className="space-y-2">
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Page title"
+                  value={newPageTitle}
+                  onChange={(e) => setNewPageTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newPageTitle.trim()) createPageMutation.mutate()
+                    if (e.key === 'Escape') setShowNewPage(false)
+                  }}
+                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => createPageMutation.mutate()}
+                    disabled={!newPageTitle.trim() || createPageMutation.isPending}
+                    className="flex-1 text-sm px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                  <button
+                    onClick={() => setShowNewPage(false)}
+                    className="flex-1 text-sm px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowNewPage(true)}
+                className="text-sm text-indigo-600 hover:text-indigo-800"
+              >
+                + Add page
+              </button>
+            )}
+          </div>
+        </aside>
+
+        {/* Center: canvas */}
+        <main className="flex-1 min-w-0 overflow-y-auto p-6">
+          {!selectedPageId ? (
+            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+              Select a page to edit.
+            </div>
+          ) : (
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold text-gray-700">
+                  {selectedPage?.title}
+                  <span className="ml-2 text-gray-400 font-normal">
+                    ({pageImages.length} {pageImages.length === 1 ? 'image' : 'images'})
+                  </span>
+                </h2>
+                <p className="text-xs text-gray-400">Drag images from the library → drop here to add. Drag to reorder. ⟺ to resize.</p>
+              </div>
+
+              {/* Drop zone wrapper */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true) }}
+                onDragLeave={() => setIsDragOver(false)}
+                onDrop={handleCanvasDrop}
+                className={`min-h-40 rounded-xl border-2 transition-colors ${
+                  isDragOver
+                    ? 'border-indigo-400 bg-indigo-50'
+                    : 'border-dashed border-gray-300 bg-white'
+                }`}
+              >
+                {orderedItems.length === 0 ? (
+                  <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
+                    {addMutation.isPending ? 'Adding…' : 'Drop images here or click + in the library'}
+                  </div>
+                ) : (
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext items={localOrder} strategy={rectSortingStrategy}>
+                      <div
+                        ref={canvasRef}
+                        className="p-4 grid gap-2"
+                        style={{ gridTemplateColumns: 'repeat(3, 1fr)', gridAutoFlow: 'row dense' }}
+                      >
+                        {orderedItems.map((item) => (
+                          <SortableItem
+                            key={item.id}
+                            item={item}
+                            localColSpan={getColSpan(item)}
+                            onRemove={() => removeMutation.mutate(item.id)}
+                            onResizeStart={handleResizeStart}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                )}
+              </div>
+            </div>
+          )}
+        </main>
+
+        {/* Right panel: image library */}
+        <aside className="w-52 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-gray-100 flex-shrink-0">
+            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Library</h2>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2">
+            {allImages.length === 0 ? (
+              <p className="text-xs text-gray-400 p-2">
+                No images.{' '}
+                <button
+                  onClick={() => navigate('/app/images')}
+                  className="text-indigo-600 hover:underline"
+                >
+                  Upload
+                </button>
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5">
+                {allImages.map((img: Image) => {
+                  const inPage = addedImageIds.has(img.id)
+                  const aspectRatio =
+                    img.width && img.height ? `${img.width} / ${img.height}` : '1 / 1'
+                  return (
+                    <div
+                      key={img.id}
+                      draggable={!inPage}
+                      onDragStart={inPage ? undefined : (e) => handleLibraryDragStart(e, img.id)}
+                      className={`relative group rounded overflow-hidden bg-gray-100 cursor-pointer ${
+                        inPage ? 'opacity-30 cursor-default' : 'hover:ring-2 hover:ring-indigo-400'
+                      }`}
+                      onClick={() => {
+                        if (!inPage && selectedPageId) addMutation.mutate(img.id)
+                      }}
+                      title={inPage ? img.filename : `Add ${img.filename}`}
+                    >
+                      <div style={{ aspectRatio }}>
                         <img
                           src={img.thumb_url}
                           alt={img.filename}
-                          className={`w-full h-full object-cover rounded-lg ${inPage ? 'opacity-30' : ''}`}
+                          className="w-full h-full"
+                          style={{ objectFit: 'contain', display: 'block' }}
+                          draggable={false}
                         />
-                        {!inPage && (
-                          <button
-                            onClick={() => addMutation.mutate(img.id)}
-                            disabled={addMutation.isPending}
-                            className="absolute top-1 right-1 bg-black/60 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-indigo-600"
-                            title="Add to page"
-                          >
-                            +
-                          </button>
-                        )}
                       </div>
-                    )
-                  })}
-                </div>
-              )}
-            </div>
+                      {!inPage && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
+                          <span className="text-white text-xl font-bold opacity-0 group-hover:opacity-100 transition-opacity drop-shadow">
+                            +
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      </main>
+        </aside>
+      </div>
     </div>
   )
 }

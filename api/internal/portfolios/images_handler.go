@@ -434,6 +434,60 @@ func (h *Handler) addImageToPage(w http.ResponseWriter, r *http.Request, pageID 
 	})
 }
 
+func (h *Handler) ReorderPageImages(w http.ResponseWriter, r *http.Request) {
+	userIDStr, ok := auth.GetUserID(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var userID pgtype.UUID
+	if err := userID.Scan(userIDStr); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid user id"})
+		return
+	}
+	portfolioIDStr := chi.URLParam(r, "id")
+	var portfolioID pgtype.UUID
+	if err := portfolioID.Scan(portfolioIDStr); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid portfolio id"})
+		return
+	}
+	if !h.ownershipCheck(w, r, portfolioID, userID, userIDStr, portfolioIDStr) {
+		return
+	}
+	page, err := h.getPage(r, portfolioID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "page not found"})
+		return
+	}
+
+	var body struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid body"})
+		return
+	}
+
+	for i, idStr := range body.IDs {
+		var itemID pgtype.UUID
+		if err := itemID.Scan(idStr); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid item id: " + idStr})
+			return
+		}
+		if _, err := h.queries.UpdateGridItemSortOrder(r.Context(), generated.UpdateGridItemSortOrderParams{
+			ID:        itemID,
+			SortOrder: int32(i),
+			PageID:    page.ID,
+		}); err != nil {
+			slog.ErrorContext(r.Context(), "ReorderPageImages: db update failed", "item_id", idStr, "err", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) removeImageFromPage(w http.ResponseWriter, r *http.Request, pageID pgtype.UUID) {
 	var itemID pgtype.UUID
 	if err := itemID.Scan(chi.URLParam(r, "itemId")); err != nil {
