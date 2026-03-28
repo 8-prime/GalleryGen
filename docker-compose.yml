@@ -45,7 +45,7 @@ services:
       context: .
       dockerfile: nginx/Dockerfile
     ports:
-      - "80:80"
+      - "9081:80"
     volumes:
       - nginx_cache:/var/cache/nginx
     depends_on:
