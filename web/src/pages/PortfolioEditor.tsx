@@ -502,7 +502,7 @@ export function PortfolioEditor() {
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       {/* Header */}
-      <header className="flex-shrink-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+      <header className="shrink-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
         <button
           onClick={() => navigate("/app/dashboard")}
           className="text-sm text-gray-500 hover:text-gray-900"
@@ -512,7 +512,7 @@ export function PortfolioEditor() {
         <span className="text-sm font-medium text-gray-700 truncate mx-4">
           {title}
         </span>
-        <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-3 shrink-0">
           {portfolio.published && (
             <a
               href={`/p/${portfolio.slug}`}
@@ -540,7 +540,7 @@ export function PortfolioEditor() {
       {/* Body: 3-panel layout */}
       <div className="flex flex-1 min-h-0">
         {/* Left panel: settings + pages */}
-        <aside className="w-60 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
+        <aside className="w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
           {/* Settings */}
           <div className="p-4 border-b border-gray-100">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
@@ -656,7 +656,7 @@ export function PortfolioEditor() {
                           deletePageMutation.mutate(page.id);
                         }
                       }}
-                      className="text-gray-400 hover:text-red-500 text-xs px-1 flex-shrink-0"
+                      className="text-gray-400 hover:text-red-500 text-xs px-1 shrink-0"
                       title="Delete page"
                     >
                       ×
@@ -805,15 +805,15 @@ export function PortfolioEditor() {
         </main>
 
         {/* Right panel: image library */}
-        <aside className="w-52 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-gray-100 flex-shrink-0 flex items-center justify-between gap-2">
+        <aside className="w-52 shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-gray-100 shrink-0 flex items-center justify-between gap-2">
             <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
               Library
             </h2>
             <button
               onClick={() => uploadInputRef.current?.click()}
               disabled={uploading}
-              className="text-xs px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 flex-shrink-0"
+              className="text-xs px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 hrink-0"
               title="Upload images"
             >
               {uploading ? "…" : "+ Upload"}
