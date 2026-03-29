@@ -100,10 +100,12 @@
             }
 
             @media (max-width: 900px) {
-              .grid { grid-template-columns: repeat(2, 1fr); }
+              .grid {
+                  display: flex;
+                  flex-direction: column;
+              }
             }
             @media (max-width: 500px) {
-              .grid { grid-template-columns: 1fr; }
               header { padding: 1.25rem 1rem 0.75rem; }
               .page-section { padding: 0.75rem 1rem 1.5rem; }
             }
