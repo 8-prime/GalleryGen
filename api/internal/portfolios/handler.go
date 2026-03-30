@@ -506,12 +506,12 @@ func (h *Handler) GetPublicPortfolio(w http.ResponseWriter, r *http.Request) {
 				Filename:  row.Filename,
 				Width:     w2,
 				Height:    h2,
-				URL:       func() string {
-				if h.imgproxy != nil && h.imgproxy.Enabled {
-					return h.imgproxy.SignURL(row.StorageKey, 1600, 0)
-				}
-				return "/media/" + row.ImageID.String()
-			}(),
+				URL: func() string {
+					if h.imgproxy != nil && h.imgproxy.Enabled {
+						return h.imgproxy.SignURL(row.StorageKey, 1600, 0)
+					}
+					return "/media/" + row.ImageID.String()
+				}(),
 			}
 		}
 		pageResponses = append(pageResponses, publicPageResponse{
@@ -534,29 +534,4 @@ func (h *Handler) GetPublicPortfolio(w http.ResponseWriter, r *http.Request) {
 		Description: desc,
 		Pages:       pageResponses,
 	})
-}
-
-func (h *Handler) RegisterRoutes(r chi.Router) {
-	r.Get("/", h.List)
-	r.Post("/", h.Create)
-	r.Put("/{id}", h.Update)
-	r.Delete("/{id}", h.Delete)
-
-	// Main-page image endpoints (backward compat)
-	r.Get("/{id}/images", h.ListImages)
-	r.Post("/{id}/images", h.AddImage)
-	r.Delete("/{id}/images/{itemId}", h.RemoveImage)
-
-	// Pages CRUD
-	r.Get("/{id}/pages", h.ListPages)
-	r.Post("/{id}/pages", h.CreatePageHandler)
-	r.Put("/{id}/pages/{pageId}", h.UpdatePageHandler)
-	r.Delete("/{id}/pages/{pageId}", h.DeletePageHandler)
-
-	// Page-specific image endpoints
-	r.Get("/{id}/pages/{pageId}/images", h.ListPageImages)
-	r.Post("/{id}/pages/{pageId}/images", h.AddPageImage)
-	r.Post("/{id}/pages/{pageId}/images/reorder", h.ReorderPageImages)
-	r.Delete("/{id}/pages/{pageId}/images/{itemId}", h.RemovePageImage)
-	r.Patch("/{id}/pages/{pageId}/images/{itemId}", h.UpdateImageLayout)
 }

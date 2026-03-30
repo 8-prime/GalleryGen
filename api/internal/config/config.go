@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 
 	"github.com/joho/godotenv"
@@ -55,6 +56,14 @@ func Load() *Config {
 		AdminEmail:         os.Getenv("ADMIN_EMAIL"),
 		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
 	}
+
+	if c.DatabaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
+	if c.JWTSecret == "" {
+		log.Fatal("JWT_SECRET is required")
+	}
+
 	return c
 }
 
