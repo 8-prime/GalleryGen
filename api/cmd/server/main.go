@@ -124,7 +124,6 @@ func main() {
 	authSvc := auth.NewService(queries, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authSvc)
 	adminHandler := admin.NewHandler(queries)
-	portfolioHandler := portfolios.NewHandler(queries)
 
 	imgproxyCfg := &images.ImgproxyConfig{
 		Enabled: cfg.ImgproxyEnabled,
@@ -132,6 +131,8 @@ func main() {
 		Salt:    cfg.ImgproxySalt,
 		BaseURL: cfg.ImgproxyBaseURL,
 	}
+
+	portfolioHandler := portfolios.NewHandler(queries, imgproxyCfg)
 
 	portfolioPageHandler, err := portfolios.NewPageHandler(queries, imgproxyCfg)
 	if err != nil {

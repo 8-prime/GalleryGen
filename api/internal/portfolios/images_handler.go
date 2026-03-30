@@ -8,6 +8,7 @@ import (
 
 	"github.com/galleryGen/api/db/generated"
 	"github.com/galleryGen/api/internal/auth"
+	"github.com/galleryGen/api/internal/images"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -30,9 +31,14 @@ type portfolioImageResponse struct {
 	FullURL        string `json:"full_url"`
 }
 
-func toPortfolioImageResponse(row generated.GetGridItemsByPageIDRow) portfolioImageResponse {
+func toPortfolioImageResponse(row generated.GetGridItemsByPageIDRow, cfg *images.ImgproxyConfig) portfolioImageResponse {
 	imageID := row.ImageID.String()
-	url := "/media/" + imageID
+	thumbURL := "/media/" + imageID
+	fullURL := "/media/" + imageID
+	if cfg != nil && cfg.Enabled {
+		thumbURL = cfg.SignURL(row.StorageKey, 400, 400)
+		fullURL = cfg.SignURL(row.StorageKey, 1600, 0)
+	}
 	var w, h int32
 	if row.Width.Valid {
 		w = row.Width.Int32
@@ -53,8 +59,8 @@ func toPortfolioImageResponse(row generated.GetGridItemsByPageIDRow) portfolioIm
 		MimeType:       row.MimeType,
 		Width:          w,
 		Height:         h,
-		ThumbURL:       url,
-		FullURL:        url,
+		ThumbURL:       thumbURL,
+		FullURL:        fullURL,
 	}
 }
 
@@ -375,7 +381,7 @@ func (h *Handler) listImagesForPage(w http.ResponseWriter, r *http.Request, page
 	}
 	result := make([]portfolioImageResponse, len(rows))
 	for i, row := range rows {
-		result[i] = toPortfolioImageResponse(row)
+		result[i] = toPortfolioImageResponse(row, h.imgproxy)
 	}
 	writeJSON(w, http.StatusOK, result)
 }

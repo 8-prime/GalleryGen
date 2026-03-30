@@ -10,17 +10,19 @@ import (
 
 	"github.com/galleryGen/api/db/generated"
 	"github.com/galleryGen/api/internal/auth"
+	"github.com/galleryGen/api/internal/images"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Handler struct {
-	queries *generated.Queries
+	queries  *generated.Queries
+	imgproxy *images.ImgproxyConfig
 }
 
-func NewHandler(queries *generated.Queries) *Handler {
-	return &Handler{queries: queries}
+func NewHandler(queries *generated.Queries, imgproxy *images.ImgproxyConfig) *Handler {
+	return &Handler{queries: queries, imgproxy: imgproxy}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -504,7 +506,12 @@ func (h *Handler) GetPublicPortfolio(w http.ResponseWriter, r *http.Request) {
 				Filename:  row.Filename,
 				Width:     w2,
 				Height:    h2,
-				URL:       "/media/" + row.ImageID.String(),
+				URL:       func() string {
+				if h.imgproxy != nil && h.imgproxy.Enabled {
+					return h.imgproxy.SignURL(row.StorageKey, 1600, 0)
+				}
+				return "/media/" + row.ImageID.String()
+			}(),
 			}
 		}
 		pageResponses = append(pageResponses, publicPageResponse{
