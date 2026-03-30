@@ -98,7 +98,7 @@ function SortableItem({
         className="w-full"
       >
         <img
-          src={item.thumb_url}
+          src={item.full_url}
           alt={item.filename}
           className="w-full h-full"
           style={{ objectFit: "cover", display: "block" }}
