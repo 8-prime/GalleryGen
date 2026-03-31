@@ -13,6 +13,7 @@ import (
 	"github.com/galleryGen/api/internal/config"
 	"github.com/galleryGen/api/internal/images"
 	"github.com/galleryGen/api/internal/portfolios"
+	"github.com/galleryGen/api/migrations"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -109,6 +110,7 @@ func NewServer(config *config.Config) *Server {
 
 func (server *Server) Start() {
 	sqlDB := stdlib.OpenDBFromPool(server.dbPool)
+	goose.SetBaseFS(migrations.FS)
 	if err := goose.Up(sqlDB, "."); err != nil {
 		slog.Error("goose up failed", "err", err)
 		os.Exit(1)
