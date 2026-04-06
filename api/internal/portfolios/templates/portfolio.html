@@ -49,6 +49,7 @@
             nav.tabs {
               display: flex;
               gap: 0;
+              flex-wrap: wrap;
             }
 
             nav.tabs a {
@@ -106,7 +107,15 @@
                   flex-direction: column;
               }
             }
-            @media (max-width: 500px) {
+            @media (max-width: 600px) {
+              .header-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+              }
+              nav.tabs a {
+                padding: 0.5rem 0.75rem;
+              }
               header { padding: 1.25rem 1rem 0.75rem; }
               .page-section { padding: 0.75rem 1rem 1.5rem; }
             }
