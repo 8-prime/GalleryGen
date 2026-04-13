@@ -23,9 +23,9 @@ func (q *Queries) CountImagesByUserID(ctx context.Context, userID pgtype.UUID) (
 }
 
 const createImage = `-- name: CreateImage :one
-INSERT INTO images (user_id, storage_key, filename, mime_type, width, height, size_bytes)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at
+INSERT INTO images (user_id, storage_key, filename, mime_type, width, height, size_bytes, page_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at, page_id
 `
 
 type CreateImageParams struct {
@@ -36,6 +36,7 @@ type CreateImageParams struct {
 	Width      pgtype.Int4 `json:"width"`
 	Height     pgtype.Int4 `json:"height"`
 	SizeBytes  pgtype.Int8 `json:"size_bytes"`
+	PageID     pgtype.UUID `json:"page_id"`
 }
 
 func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) (Image, error) {
@@ -47,6 +48,7 @@ func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) (Image
 		arg.Width,
 		arg.Height,
 		arg.SizeBytes,
+		arg.PageID,
 	)
 	var i Image
 	err := row.Scan(
@@ -59,6 +61,7 @@ func (q *Queries) CreateImage(ctx context.Context, arg CreateImageParams) (Image
 		&i.Height,
 		&i.SizeBytes,
 		&i.CreatedAt,
+		&i.PageID,
 	)
 	return i, err
 }
@@ -78,7 +81,7 @@ func (q *Queries) DeleteImage(ctx context.Context, arg DeleteImageParams) error 
 }
 
 const getImageByID = `-- name: GetImageByID :one
-SELECT id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at FROM images WHERE id = $1 AND user_id = $2
+SELECT id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at, page_id FROM images WHERE id = $1 AND user_id = $2
 `
 
 type GetImageByIDParams struct {
@@ -99,12 +102,13 @@ func (q *Queries) GetImageByID(ctx context.Context, arg GetImageByIDParams) (Ima
 		&i.Height,
 		&i.SizeBytes,
 		&i.CreatedAt,
+		&i.PageID,
 	)
 	return i, err
 }
 
 const getImageByIDPublic = `-- name: GetImageByIDPublic :one
-SELECT id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at FROM images WHERE id = $1
+SELECT id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at, page_id FROM images WHERE id = $1
 `
 
 func (q *Queries) GetImageByIDPublic(ctx context.Context, id pgtype.UUID) (Image, error) {
@@ -120,12 +124,13 @@ func (q *Queries) GetImageByIDPublic(ctx context.Context, id pgtype.UUID) (Image
 		&i.Height,
 		&i.SizeBytes,
 		&i.CreatedAt,
+		&i.PageID,
 	)
 	return i, err
 }
 
 const getImagesByUserID = `-- name: GetImagesByUserID :many
-SELECT id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at FROM images WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, user_id, storage_key, filename, mime_type, width, height, size_bytes, created_at, page_id FROM images WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type GetImagesByUserIDParams struct {
@@ -153,6 +158,7 @@ func (q *Queries) GetImagesByUserID(ctx context.Context, arg GetImagesByUserIDPa
 			&i.Height,
 			&i.SizeBytes,
 			&i.CreatedAt,
+			&i.PageID,
 		); err != nil {
 			return nil, err
 		}

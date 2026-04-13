@@ -30,6 +30,7 @@ type Image struct {
 	Height     pgtype.Int4        `json:"height"`
 	SizeBytes  pgtype.Int8        `json:"size_bytes"`
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	PageID     pgtype.UUID        `json:"page_id"`
 }
 
 type OauthAccount struct {

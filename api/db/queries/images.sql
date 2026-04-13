@@ -1,6 +1,6 @@
 -- name: CreateImage :one
-INSERT INTO images (user_id, storage_key, filename, mime_type, width, height, size_bytes)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO images (user_id, storage_key, filename, mime_type, width, height, size_bytes, page_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: GetImagesByUserID :many

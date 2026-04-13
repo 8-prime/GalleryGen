@@ -47,7 +47,8 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 
 	slog.Debug("upload: starting", "user_id", userID, "filename", fh.Filename, "size", fh.Size, "content_type", fh.Header.Get("Content-Type"))
 
-	img, err := h.svc.Upload(r.Context(), userID, fh)
+	//TODO:Get portfolio and page id from form
+	img, err := h.svc.Upload(r.Context(), userID, nil, nil, fh)
 	if err != nil {
 		slog.Error("upload: service error", "user_id", userID, "filename", fh.Filename, "err", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "upload failed"})

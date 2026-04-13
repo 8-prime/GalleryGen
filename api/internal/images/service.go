@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"image"
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"image"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -41,7 +41,7 @@ type ImageResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (s *Service) Upload(ctx context.Context, userIDStr string, fh *multipart.FileHeader) (*ImageResponse, error) {
+func (s *Service) Upload(ctx context.Context, userIDStr string, pageId *string, portfolioId *string, fh *multipart.FileHeader) (*ImageResponse, error) {
 	f, err := fh.Open()
 	if err != nil {
 		slog.ErrorContext(ctx, "upload: open file header failed", "err", err)
@@ -79,6 +79,29 @@ func (s *Service) Upload(ctx context.Context, userIDStr string, fh *multipart.Fi
 		return nil, err
 	}
 
+	var pageID pgtype.UUID
+	var portfolioID pgtype.UUID
+	if pageId != nil && portfolioId != nil {
+		if err = pageID.Scan(pageId); err != nil {
+			slog.ErrorContext(ctx, "upload: invalid page UUID", "page_id", pageId, "err", err)
+			return nil, err
+		}
+		if err = portfolioID.Scan(portfolioId); err != nil {
+			slog.ErrorContext(ctx, "upload: invalid portfolio UUID", "portfolio_id", portfolioId, "err", err)
+			return nil, err
+		}
+	}
+
+	_, err = s.queries.GetPageByID(ctx, generated.GetPageByIDParams{
+		ID:          pageID,
+		PortfolioID: portfolioID,
+	})
+
+	if err != nil {
+		slog.ErrorContext(ctx, "upload: invalid page UUID", "page_id", pageId, "err", err)
+		return nil, err
+	}
+
 	img, err := s.queries.CreateImage(ctx, generated.CreateImageParams{
 		UserID:     userID,
 		StorageKey: storageKey,
@@ -87,6 +110,7 @@ func (s *Service) Upload(ctx context.Context, userIDStr string, fh *multipart.Fi
 		Width:      pgtype.Int4{Int32: int32(width), Valid: width > 0},
 		Height:     pgtype.Int4{Int32: int32(height), Valid: height > 0},
 		SizeBytes:  pgtype.Int8{Int64: fh.Size, Valid: true},
+		PageID:     pageID,
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "upload: db insert failed", "storage_key", storageKey, "err", err)
