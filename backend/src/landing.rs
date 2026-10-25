@@ -42,11 +42,11 @@ pub fn routes() -> Router {
             }),
         )
         .route(
-            "/landing/favicon.svg",
+            "/landing/favicon.ico",
             get(|| async {
                 asset(
-                    "image/svg+xml",
-                    include_bytes!("../static/landing/favicon.svg"),
+                    "image/x-icon",
+                    include_bytes!("../static/landing/favicon.ico"),
                 )
             }),
         )
@@ -101,6 +101,7 @@ mod tests {
         assert!(html.contains("Your photographs."));
         assert!(html.contains("href=\"/app/login\""));
         assert!(html.contains("href=\"/app/register\""));
+        assert!(html.contains("href=\"/landing/favicon.ico\""));
         assert!(!html.contains("Coming soon"));
     }
 
@@ -109,7 +110,7 @@ mod tests {
         for (path, mime) in [
             ("style.css", "text/css"),
             ("gallery.js", "text/javascript"),
-            ("favicon.svg", "image/svg+xml"),
+            ("favicon.ico", "image/x-icon"),
             ("lake.jpg", "image/jpeg"),
             ("highlands.jpg", "image/jpeg"),
             ("mountain.jpg", "image/jpeg"),

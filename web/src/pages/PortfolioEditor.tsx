@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -515,9 +516,11 @@ function CanvasWorkspace({
     canvas = useRef<HTMLDivElement>(null),
     gesture = useRef<Gesture | null>(null);
   const itemsRef = useRef(items);
-  itemsRef.current = items;
   const busyRef = useRef(busy);
-  busyRef.current = busy;
+  useLayoutEffect(() => {
+    itemsRef.current = items;
+    busyRef.current = busy;
+  }, [items, busy]);
   const width =
     zoom === "fit"
       ? Math.min(1200, Math.max(200, available))

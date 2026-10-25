@@ -10,6 +10,7 @@ import {
   Check,
   Expand,
   Trash2,
+  LoaderCircle,
 } from "lucide-react";
 import {
   createFolder,
@@ -29,6 +30,15 @@ interface Props {
   excludedIds?: string[];
   single?: boolean;
 }
+
+interface UploadState {
+  current: number;
+  total: number;
+  filename: string;
+  percent: number;
+  destination: string;
+}
+
 export function ImageExplorer({
   onChoose,
   excludedIds = [],
@@ -43,6 +53,9 @@ export function ImageExplorer({
   const [offset, setOffset] = useState(0);
   const [selection, setSelection] = useState<Record<string, Image>>({});
   const [busy, setBusy] = useState(false);
+  const [uploadState, setUploadState] = useState<UploadState | null>(null);
+  const [uploadNotice, setUploadNotice] = useState("");
+  const mutation = useRef(false);
   const [error, setError] = useState("");
   const [newFolder, setNewFolder] = useState<string | null>(null);
   const [preview, setPreview] = useState<Image | null>(null);
@@ -69,20 +82,27 @@ export function ImageExplorer({
     (image) => !excludedIds.includes(image.id),
   );
   const currentFolder = folders.data?.find((item) => item.id === folder);
-  async function perform(action: () => Promise<unknown>) {
+  async function refreshLibrary() {
+    await Promise.all([
+      query.invalidateQueries({ queryKey: ["images"] }),
+      query.invalidateQueries({ queryKey: ["folders"] }),
+    ]);
+  }
+  async function perform(
+    action: () => Promise<unknown>,
+    failureMessage = "That change could not be completed. Please try again.",
+  ) {
+    if (mutation.current) return;
+    mutation.current = true;
     setBusy(true);
     setError("");
     try {
       await action();
-      await Promise.all([
-        query.invalidateQueries({ queryKey: ["images"] }),
-        query.invalidateQueries({ queryKey: ["folders"] }),
-      ]);
+      await refreshLibrary();
     } catch {
-      setError(
-        "That change could not be completed. Please try again. Folder names must be unique.",
-      );
+      setError(failureMessage);
     } finally {
+      mutation.current = false;
       setBusy(false);
     }
   }
@@ -100,12 +120,53 @@ export function ImageExplorer({
     });
   }
   async function upload(files: FileList | null) {
-    if (!files?.length) return;
-    await perform(async () => {
-      for (const file of Array.from(files))
-        await uploadImage(file, currentFolder?.id);
-    });
-    if (input.current) input.current.value = "";
+    if (!files?.length || mutation.current) return;
+    // Snapshot both before awaiting: folder navigation must not redirect a batch.
+    const batch = Array.from(files);
+    const folderId = folder === "all" || folder === "none" ? undefined : folder;
+    const destination = folderId ? currentFolder?.name ?? "the selected folder" : "Unfiled";
+    mutation.current = true;
+    setBusy(true);
+    setError("");
+    setUploadNotice("");
+    const failures: string[] = [];
+    let uploaded = 0;
+    try {
+      for (const [index, file] of batch.entries()) {
+        setUploadState({
+          current: index + 1,
+          total: batch.length,
+          filename: file.name,
+          percent: 0,
+          destination,
+        });
+        try {
+          await uploadImage(file, folderId, ({ loaded, total }) => {
+            setUploadState((state) => state && {
+              ...state,
+              percent: total ? Math.min(100, Math.floor(loaded / total * 100)) : 100,
+            });
+          });
+          uploaded++;
+        } catch (cause) {
+          const message = cause instanceof Error
+            ? cause.message
+            : "The upload failed. Please try again.";
+          failures.push(`${file.name}: ${message}`);
+        }
+      }
+      setUploadNotice(
+        `${uploaded} of ${batch.length} photographs uploaded to ${destination}.${failures.length ? ` ${failures.length} failed.` : ""}`,
+      );
+      if (failures.length) setError(failures.join("\n"));
+      // Successful files must appear even when another file in the batch fails.
+      await refreshLibrary();
+    } finally {
+      mutation.current = false;
+      setBusy(false);
+      setUploadState(null);
+      if (input.current) input.current.value = "";
+    }
   }
   return (
     <div className="library-browser">
@@ -139,11 +200,14 @@ export function ImageExplorer({
             className="new-folder"
             onSubmit={(event) => {
               event.preventDefault();
-              void perform(async () => {
-                const result = await createFolder(newFolder);
-                chooseFolder(result.id);
-                setNewFolder(null);
-              });
+              void perform(
+                async () => {
+                  const result = await createFolder(newFolder);
+                  chooseFolder(result.id);
+                  setNewFolder(null);
+                },
+                "The folder could not be created. Choose a unique folder name and try again.",
+              );
             }}
           >
             <input
@@ -225,8 +289,12 @@ export function ImageExplorer({
             disabled={busy}
             onClick={() => input.current?.click()}
           >
-            <Upload size={15} />
-            {busy ? "Working…" : "Upload"}
+            {uploadState ? (
+              <LoaderCircle size={15} className="upload-spinner" />
+            ) : (
+              <Upload size={15} />
+            )}
+            {uploadState ? "Uploading…" : busy ? "Working…" : "Upload"}
           </button>
           <input
             ref={input}
@@ -237,6 +305,32 @@ export function ImageExplorer({
             onChange={(e) => void upload(e.target.files)}
           />
         </div>
+        {uploadState ? (
+          <div className="library-upload" aria-busy="true">
+            <div className="upload-status" role="status">
+              <strong>
+                {uploadState.percent === 100 ? "Saving" : "Uploading"}{" "}
+                {uploadState.current} of {uploadState.total}
+              </strong>
+              <span title={uploadState.filename}>{uploadState.filename}</span>
+              <span>To {uploadState.destination}</span>
+            </div>
+            <progress
+              aria-label={`Upload progress for ${uploadState.filename}`}
+              max={100}
+              value={uploadState.percent}
+            />
+            <span className="upload-percent">
+              {uploadState.percent === 100
+                ? "Waiting for the server to save this photograph…"
+                : `${uploadState.percent}% of this file transferred`}
+            </span>
+          </div>
+        ) : uploadNotice ? (
+          <p className="library-upload-notice" role="status">
+            {uploadNotice}
+          </p>
+        ) : null}
         <div className="library-context">
           <div>
             <h2>
@@ -251,15 +345,20 @@ export function ImageExplorer({
           {currentFolder && (
             <div className="inline-actions">
               <button
+                disabled={busy}
                 onClick={() => {
                   const name = prompt("Rename folder", currentFolder.name);
                   if (name?.trim())
-                    void perform(() => renameFolder(currentFolder.id, name));
+                    void perform(
+                      () => renameFolder(currentFolder.id, name),
+                      "The folder could not be renamed. Choose a unique folder name and try again.",
+                    );
                 }}
               >
                 Rename
               </button>
               <button
+                disabled={busy}
                 onClick={() => {
                   if (
                     confirm(
@@ -408,7 +507,7 @@ export function ImageExplorer({
                   })
                 }
               >
-                {busy
+                {busy && !uploadState
                   ? "Adding…"
                   : single
                     ? "Replace photograph"

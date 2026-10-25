@@ -1,5 +1,7 @@
 import { api } from "./api";
-import type { Image, ImageFolder, ImageListResult } from "./types";
+import type { ImageFolder, ImageListResult } from "./types";
+
+export { uploadImage } from "./upload";
 
 export interface ImageFilters {
   search?: string;
@@ -14,13 +16,6 @@ export async function listImages(
   return api
     .get("images", { searchParams: { limit, offset, ...filters } })
     .json<ImageListResult>();
-}
-export async function uploadImage(file: File, folder?: string): Promise<Image> {
-  const form = new FormData();
-  form.append("file", file);
-  return api
-    .post("images", { body: form, searchParams: folder ? { folder } : {} })
-    .json<Image>();
 }
 export async function deleteImage(id: string): Promise<void> {
   await api.delete(`images/${id}`);

@@ -749,6 +749,71 @@
   justify-content: space-between;
   gap: 20px;
 }
+.library-upload {
+  margin: 16px 24px 0;
+  padding: 14px 16px;
+  background: #f3f6ef;
+  border: 1px solid #dce3d4;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.upload-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 14px;
+  margin-bottom: 10px;
+}
+.upload-status span {
+  overflow-wrap: anywhere;
+  color: #58634d;
+}
+.library-upload progress {
+  display: block;
+  width: 100%;
+  height: 8px;
+  accent-color: #607c51;
+  appearance: none;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #dce3d4;
+}
+.library-upload progress::-webkit-progress-bar {
+  background: #dce3d4;
+}
+.library-upload progress::-webkit-progress-value {
+  background: #607c51;
+}
+.library-upload progress::-moz-progress-bar {
+  background: #607c51;
+}
+.upload-percent {
+  display: block;
+  margin-top: 7px;
+  color: #58634d;
+  font-size: 11px;
+}
+.library-upload-notice {
+  margin: 16px 24px 0;
+  font-size: 12px;
+  color: #536b43;
+}
+.library-main .studio-error {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.upload-spinner {
+  animation: upload-spin 1s linear infinite;
+}
+@keyframes upload-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .upload-spinner { animation: none; }
+}
 .library-context h2 {
   font-size: 17px;
   font-weight: 550;
