@@ -1,10 +1,12 @@
 pub mod auth;
+pub mod canvas;
 pub mod config;
 pub mod db;
 pub mod image_proxy;
 pub mod images;
 pub mod imgproxy;
 pub mod landing;
+pub mod library;
 pub mod portfolios;
 
 use std::path::Path;
@@ -32,6 +34,8 @@ pub fn application(
 ) -> Router {
     let mut app = router(frontend_path).merge(
         auth::routes()
+            .merge(canvas::routes())
+            .merge(library::routes())
             .merge(images::routes())
             .merge(portfolios::routes())
             .with_state(state),

@@ -38,7 +38,7 @@ fn response(state: &AppState, row: PgRow) -> Value {
     let key: String = row.get("storage_key");
     json!({"id":id, "filename":row.get::<String,_>("filename"), "mime_type":row.get::<String,_>("mime_type"),
         "width":row.get::<Option<i32>,_>("width").unwrap_or(0), "height":row.get::<Option<i32>,_>("height").unwrap_or(0),
-        "size_bytes":row.get::<Option<i64>,_>("size_bytes").unwrap_or(0), "created_at":row.get::<Option<String>,_>("created_at_text").unwrap_or_default(),
+        "folder_id":row.get::<Option<Uuid>,_>("folder_id"),"size_bytes":row.get::<Option<i64>,_>("size_bytes").unwrap_or(0), "created_at":row.get::<Option<String>,_>("created_at_text").unwrap_or_default(),
         "thumb_url":image_url(state,id,&key,true), "full_url":image_url(state,id,&key,false)})
 }
 
@@ -65,12 +65,42 @@ async fn list(
     Query(query): Query<HashMap<String, String>>,
 ) -> ApiResult<Json<Value>> {
     let (limit, offset) = pagination(&query);
-    let total: i64 = sqlx::query_scalar("SELECT count(*) FROM images WHERE user_id = $1")
+    let search = query.get("search").map(|s| s.trim()).unwrap_or("");
+    if search.len() > 500 {
+        return Err(ApiError(StatusCode::BAD_REQUEST, "search is too long"));
+    }
+    let pattern = format!(
+        "%{}%",
+        search
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    );
+    let folder = query.get("folder").map(String::as_str).unwrap_or("all");
+    let folder_id = if folder == "all" || folder == "none" {
+        None
+    } else {
+        Some(
+            Uuid::parse_str(folder)
+                .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "invalid folder"))?,
+        )
+    };
+    let unfiled = folder == "none";
+    let filter = "user_id=$1 AND filename ILIKE $2 AND ($3::uuid IS NULL OR folder_id=$3) AND (NOT $4 OR folder_id IS NULL)";
+    let total: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM images WHERE {filter}"))
         .bind(user)
+        .bind(&pattern)
+        .bind(folder_id)
+        .bind(unfiled)
         .fetch_one(&state.pool)
         .await?;
-    let rows = sqlx::query("SELECT *, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at_text FROM images WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3")
-        .bind(user).bind(limit).bind(offset).fetch_all(&state.pool).await?;
+    let order = match query.get("sort").map(String::as_str) {
+        Some("oldest") => "created_at ASC,id",
+        Some("name") => "lower(filename),id",
+        _ => "created_at DESC,id",
+    };
+    let rows=sqlx::query(&format!("SELECT *,to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at_text FROM images WHERE {filter} ORDER BY {order} LIMIT $5 OFFSET $6"))
+        .bind(user).bind(pattern).bind(folder_id).bind(unfiled).bind(limit).bind(offset).fetch_all(&state.pool).await?;
     Ok(Json(
         json!({"images":rows.into_iter().map(|row| response(&state,row)).collect::<Vec<_>>(), "total":total,"limit":limit,"offset":offset}),
     ))
@@ -93,8 +123,19 @@ fn pagination(query: &HashMap<String, String>) -> (i64, i64) {
 async fn upload(
     State(state): State<AppState>,
     UserId(user): UserId,
+    Query(query): Query<HashMap<String, String>>,
     mut multipart: Multipart,
 ) -> ApiResult<impl IntoResponse> {
+    let folder = match query.get("folder") {
+        Some(value) => Some(
+            Uuid::parse_str(value)
+                .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "invalid folder"))?,
+        ),
+        None => None,
+    };
+    if let Some(folder) = folder {
+        crate::library::own_folder(&state, user, folder).await?;
+    }
     while let Some(field) = multipart
         .next_field()
         .await
@@ -141,8 +182,8 @@ async fn upload(
             .map_err(io_error)?;
         // Unique filenames are never reused, keeping cached URLs immutable.
         tokio::fs::write(&path, &data).await.map_err(io_error)?;
-        let row = sqlx::query("INSERT INTO images (user_id,storage_key,filename,mime_type,width,height,size_bytes) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at_text")
-            .bind(user).bind(&key).bind(filename).bind(mime).bind(dimensions.and_then(|(w,_)| i32::try_from(w).ok())).bind(dimensions.and_then(|(_,h)| i32::try_from(h).ok())).bind(size).fetch_one(&state.pool).await;
+        let row = sqlx::query("INSERT INTO images (user_id,storage_key,filename,mime_type,width,height,size_bytes,folder_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS created_at_text")
+            .bind(user).bind(&key).bind(filename).bind(mime).bind(dimensions.and_then(|(w,_)| i32::try_from(w).ok())).bind(dimensions.and_then(|(_,h)| i32::try_from(h).ok())).bind(size).bind(folder).fetch_one(&state.pool).await;
         match row {
             Ok(row) => return Ok((StatusCode::CREATED, Json(response(&state, row)))),
             Err(error) => {

@@ -89,6 +89,8 @@
               gap: {{ gap_px }}px;
             }
 
+            .canvas { display: block; position: relative; container-type:inline-size; }
+            .canvas .grid-item { position: absolute; padding:{{ matte_px / 12 }}cqw !important; }
             .grid-item {
               background: #fff;
               overflow: hidden;
@@ -102,10 +104,16 @@
             }
 
             @media (max-width: 900px) {
-              .grid {
+              .grid, .canvas {
+                  aspect-ratio: auto !important;
                   display: flex;
                   flex-direction: column;
+                  gap: {{ gap_px }}px;
               }
+              .grid-item { aspect-ratio:auto !important; padding:{{ matte_px }}px !important; }
+              .canvas .grid-item { position: relative; left:auto !important; top:auto !important; width:100% !important; height:auto !important; }
+              .grid-item img { height:auto; object-fit:contain !important; }
+
             }
             @media (max-width: 600px) {
               .header-row {
@@ -155,13 +163,13 @@
             {% if pages|length > 1 %}
             <h2 class="page-section-title">{{ page.title }}</h2>
             {% endif %}
-            <div class="grid">
+            <div class="grid {% if page.canvas %}canvas{% endif %}" {% if page.canvas %}style="aspect-ratio:1200/{{ page.canvas_height }};"{% endif %}>
                 {% for image in page.images %}
                 <div
                     class="grid-item"
-                    style="grid-column:span {{ image.col_span }};grid-row:span {{ image.row_span }};aspect-ratio:{{ image.col_span }}/{{ image.row_span }};padding:{{ matte_px }}px;"
+                    style="{% if page.canvas %}left:{{ image.canvas_x / 12 }}%;top:{{ image.canvas_y / page.canvas_height * 100 }}%;width:{{ image.canvas_width / 12 }}%;height:{{ image.canvas_height / page.canvas_height * 100 }}%;{% endif %}grid-column:span {{ image.col_span }};grid-row:span {{ image.row_span }};aspect-ratio:{{ image.col_span }}/{{ image.row_span }};padding:{{ matte_px }}px;"
                 >
-                    <img src="{{ image.url }}" alt="{{ image.filename }}" loading="lazy" />
+                    <img src="{{ image.url }}" alt="{{ image.filename }}" loading="lazy" style="object-fit:{{ image.image_fit|default('cover') }};object-position:{{ image.position_x|default(50) }}% {{ image.position_y|default(50) }}%;" />
                 </div>
                 {% endfor %}
             </div>
