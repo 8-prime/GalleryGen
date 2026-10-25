@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM node:22-alpine AS frontend
-RUN corepack enable
 WORKDIR /build
-COPY web/package.json web/pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN npm install --global "$(node -p 'require("./package.json").packageManager')" \
+    && pnpm install --frozen-lockfile
 COPY web/ ./
 RUN pnpm build
 
