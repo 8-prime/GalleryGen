@@ -2,28 +2,19 @@ use anyhow::{Context, Result, bail};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::time::Duration;
 
-// Keep the original SQL and Goose ledger so existing installations can switch
-// runtimes without a schema import or a second migration history.
+// Retain the deployed migration ledger and SQL to preserve existing databases.
+// The Goose-compatible format is parsed here without a Go runtime or dependency.
 const MIGRATIONS: &[(i64, &str)] = &[
-    (1, include_str!("../../api/migrations/001_init.sql")),
+    (1, include_str!("../migrations/001_init.sql")),
     (
         2,
-        include_str!("../../api/migrations/002_global_portfolio_slug.sql"),
+        include_str!("../migrations/002_global_portfolio_slug.sql"),
     ),
-    (
-        3,
-        include_str!("../../api/migrations/003_portfolio_gap.sql"),
-    ),
-    (
-        4,
-        include_str!("../../api/migrations/004_portfolio_matte.sql"),
-    ),
-    (5, include_str!("../../api/migrations/005_row_break.sql")),
-    (6, include_str!("../../api/migrations/006_admin.sql")),
-    (
-        7,
-        include_str!("../../api/migrations/007_default_no_perms.sql"),
-    ),
+    (3, include_str!("../migrations/003_portfolio_gap.sql")),
+    (4, include_str!("../migrations/004_portfolio_matte.sql")),
+    (5, include_str!("../migrations/005_row_break.sql")),
+    (6, include_str!("../migrations/006_admin.sql")),
+    (7, include_str!("../migrations/007_default_no_perms.sql")),
 ];
 
 pub async fn connect(url: &str) -> Result<PgPool> {
@@ -47,8 +38,7 @@ fn up_sql(source: &str) -> Result<&str> {
 
 pub async fn migrate(pool: &PgPool) -> Result<()> {
     let mut tx = pool.begin().await?;
-    // Serializes startup across Rust instances; never run Go and Rust migrations
-    // concurrently because Goose uses a different locking mechanism.
+    // Serialize migration startup across application instances.
     sqlx::query("SELECT pg_advisory_xact_lock(719482163)")
         .execute(&mut *tx)
         .await?;

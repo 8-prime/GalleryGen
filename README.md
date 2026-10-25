@@ -2,7 +2,7 @@
 
 Portfolio manager with a React editor, Rust backend, PostgreSQL, and imgproxy.
 The default Docker stack serves the frontend, API, public portfolios, and cached
-image transformations through a single application port. nginx is not required.
+image transformations through a single application port.
 The public landing page at `/` is embedded in the Rust binary, including its
 photographs and styles. The editor remains under `/app/`.
 
@@ -26,20 +26,16 @@ photo-mat.com, www.photo-mat.com {
 }
 ```
 
-For the first switch from Go/nginx, build the new image, then stop the old stack
-before starting Rust:
+For updates, keep the existing Compose project name and `.env`:
 
 ```sh
-docker compose build api
-docker compose -f docker-compose.go.yml down
-docker compose up -d --remove-orphans
+git pull --ff-only
+docker compose up -d --build --remove-orphans
 docker compose logs --tail=100 api
 curl -f http://localhost:9081/health
 ```
 
-Keep the existing Compose project name and `.env`. These commands reuse existing
-database and image volumes. The legacy Go stack is in `docker-compose.go.yml`.
-
-The Rust stack is being validated on the owner's remote instance. Local tests
-pass; a full container build and live database/image-processing checks remain
-pending. See [migration notes](docs/rust-migration.md) for status and rollback.
+Existing database and image volumes are reused. The Rust deployment has been
+confirmed working on the owner's remote instance. Local tests cover routing,
+rendering, signing and caching; database integration tests require an isolated
+PostgreSQL instance. See [backend notes](docs/rust-migration.md) for details.

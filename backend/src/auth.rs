@@ -109,7 +109,7 @@ async fn register(
             "email and password required",
         ));
     }
-    // Go bcrypt rejects passwords longer than 72 bytes instead of truncating.
+    // Reject passwords beyond bcrypt's 72-byte limit rather than truncating.
     if body.password.len() > 72 {
         return Err(ApiError(StatusCode::CONFLICT, "registration failed"));
     }

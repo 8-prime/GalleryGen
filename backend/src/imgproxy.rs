@@ -3,7 +3,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-/// Produces the same paths as api/internal/images/imgproxy.go.
+/// Produces signed paths compatible with existing deployed imgproxy URLs.
 /// Presentation options belong in the signed path, not an unsigned query string.
 pub struct Signer {
     key: Vec<u8>,

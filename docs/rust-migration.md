@@ -1,158 +1,90 @@
-# Rust backend migration
+# Rust backend notes
 
-## Agreed scope
+## Status
 
-Replace the maintained Go backend with Rust. Preserve the existing frontend API,
-database contents, image files, portfolio URLs, bcrypt passwords, and HS256 tokens.
-Keep imgproxy as an internal image processing service. Remove nginx when Rust has
-replaced its frontend serving, routing, upload limits/timeouts, and image caching.
-The external deployment remains central Caddy → Rust → internal services.
+The Rust deployment is the only supported stack. The owner confirmed it working
+on their remote instance, including image processing. Image proxying currently
+feels slower; performance investigation remains separate work.
 
-Canvas editing and library improvements follow the compatibility migration:
-free image placement, optional snapping, no automatic displacement, per-placement
-fit/crop settings, separate mobile reading order, folders/search, and a large
-multi-select library dialog. Do not introduce these schema changes during the port.
+The former backend, generated query code, deployment files and reverse-proxy
+container have been removed. SQL migrations now live in backend/migrations and
+are embedded directly into the Rust binary. Their contents and versions are
+unchanged. The existing goose_db_version table and SQL markers are retained as a
+database compatibility format, not a runtime dependency. Do not reset the ledger:
+existing deployments use it to avoid reapplying schema changes.
 
-## Implementation checklist
+Implemented features include authentication/admin permissions, image uploads and
+storage, portfolio/page/placement APIs, public JSON and HTML, the public landing
+page, and signed image processing through internal imgproxy with a disk cache.
 
-- [x] Axum server foundation, tracing, shutdown, health, frontend serving under /app.
-- [x] Port imgproxy signed path generation with an independent compatibility vector.
-- [x] PostgreSQL integration and Goose history support implemented (live database verification pending).
-- [x] Authentication, admin bootstrap, permissions and admin routes implemented (live verification pending).
-- [x] Image upload/list/delete, protected originals and public media implemented.
-- [x] Portfolio/page/image-placement endpoints, including legacy main-page routes implemented.
-- [x] Public JSON and escaped server-rendered portfolio HTML implemented.
-- [x] Internal imgproxy proxy and bounded persistent disk cache implemented: atomic writes,
-      concurrent miss coalescing, output format-aware keys, upstream timeouts,
-      bounded responses, eviction, and defined deletion/versioning behavior.
-- [ ] Frontend/API compatibility checks against an isolated PostgreSQL database.
-- [x] Combined frontend/Rust Dockerfile, default Compose stack without nginx, Caddy example (container build unverified).
-- [ ] Verify uploads, existing users/data, public pages and cached images end to end.
+## Development and verification
 
-## Compatibility details discovered
+Run from backend/:
 
-- Existing migrations are Goose SQL files 001–007 in api/migrations. Reuse their
-  applied-version history; do not run SQLx migrations blindly over existing tables.
-  Test both empty databases and existing version-7 databases.
-- OAuth endpoints currently return 501; S3 configuration exists but storage is local.
-- nginx caches /media and /img for 30 days with a shared 10 GB disk limit and stale
-  responses on upstream failure. It allows 100 MB uploads and 120-second API timeouts.
-- /img strips its prefix before forwarding to imgproxy; signed paths must survive
-  forwarding unchanged. imgproxy reads the shared originals volume read-only.
-- The legacy Go/nginx stack is retained in docker-compose.go.yml as a fallback.
+    cargo test
+    cargo clippy --all-targets -- -D warnings
 
-## Current status and continuation
+Proxy tests bind a temporary localhost server. DATABASE_URL and JWT_SECRET are
+required for application startup. FRONTEND_PATH defaults to ../web/dist relative
+to the working directory; export environment variables before cargo run.
 
-Work is on feature/rust-backend and pushed to origin at working checkpoints.
-The default Compose stack now runs the Rust backend and frontend without nginx.
-The owner chose to validate it on their existing single-user remote deployment and
-accepts possible data loss. Image and portfolio routes are ported; live API/database
-checks remain pending.
-Next run live database/API and container compatibility checks. Database startup applies
-the original SQL using the Goose ledger, transactionally and with a Rust startup
-advisory lock. Stop the Go backend before migrating; its lock differs.
+The database integration test requires an EMPTY disposable PostgreSQL database:
 
-Authentication preserves the existing token claim shape and lifetimes, bcrypt cost
-12, default permissions, admin bootstrap without resetting existing passwords, and
-OAuth 501 stubs. Legacy access/refresh tokens have no type distinction; this behavior
-is preserved for compatibility and should be revisited separately.
+    GALLERYGEN_TEST_DATABASE_URL=postgres://... cargo test --test database -- --ignored
 
-Run commands from backend/: cargo test; cargo clippy --all-targets -- -D warnings.
-FRONTEND_PATH defaults to ../web/dist relative to the working directory. DATABASE_URL
-and JWT_SECRET are required. Export environment variables before cargo run.
+The test leaves fixtures behind; discard the test database afterward. It checks
+initial schema creation, repeat startup, preservation of existing records and
+permissions, and refusal to run against a newer schema. This environment has no
+Docker daemon or PostgreSQL binaries, so that test remains unrun locally. The
+remote deployment is user-verified, rather than an automated integration result.
 
-Live database tests are pending: Docker is installed but its daemon/socket is absent.
-Use an EMPTY disposable PostgreSQL database and run:
-GALLERYGEN_TEST_DATABASE_URL=postgres://... cargo test --test database -- --ignored
-The test leaves fixtures behind; discard the database afterward. Also verify startup
-against a database actually created by Go/Goose before deployment.
+Authentication retains existing token claims/lifetimes, bcrypt cost 12, default
+permissions, and admin bootstrap without resetting existing passwords. Access and
+refresh tokens currently have no type distinction. OAuth endpoints return 501;
+storage is local. These behaviors can be revisited independently.
 
-Image originals stream from disk. Uploads accept the existing multipart file field
-with a 100 MB request limit, extract JPEG/PNG/GIF dimensions, and remove orphaned
-files on failed inserts. Browser URLs use /img signed paths rather than the internal
-imgproxy hostname. Placement create/update responses include actual metadata and
-working URLs, fixing the old /img/{UUID} placeholder response. Reordering is atomic;
-lazy main-page creation locks the portfolio row to avoid duplicate main pages.
-Public HTML retains the existing CSS/navigation using an autoescaped MiniJinja
-template and also handles portfolios without any pages.
+## Image processing and cache
 
-## Image proxy and cache
+Browser-facing image URLs use /img signed paths. Every request verifies its
+signature before accessing the cache, including after key rotation. Unsigned query
+strings are rejected. Requests forward Accept, whose complete value participates
+in the SHA-256 cache key. Responses include Vary: Accept, ETag when available, and
+X-Cache-Status (MISS/HIT/STALE).
 
-The /img route forwards only correctly signed paths to the configured internal
-imgproxy origin. Signatures are checked before cache hits, including after key
-rotation. Query strings are rejected; transformation options are signed in the path.
-Requests forward Accept; the complete Accept value is part of the SHA-256 cache key.
-Responses carry Vary: Accept, ETag when provided, and X-Cache-Status (MISS/HIT/STALE).
+IMAGE_CACHE_PATH defaults to ./data/cache. IMAGE_CACHE_MAX_BYTES defaults to
+10 GiB; zero disables storage. Entries expire after 30 days, with stale fallback
+for transport/server failures only. Writes use temporary files and atomic renames;
+oldest writes are evicted to stay within the disk limit. Bounded striped locks
+coalesce simultaneous requests for a variant. Processing is limited to eight
+concurrent upstream requests, 120 seconds each, and 32 MiB per output. Originals
+stream directly from disk without a duplicate cache copy.
 
-IMAGE_CACHE_PATH defaults to ./data/cache; IMAGE_CACHE_MAX_BYTES defaults to 10 GiB
-(zero disables storage). Entries expire after 30 days, with stale fallback for
-upstream transport/server failures only. Writes use temporary files and atomic
-renames; oldest writes are evicted to stay under the disk limit. Requests for the
-same variant coalesce using bounded striped locks. Upstream processing is limited
-to eight concurrent requests, 120 seconds each, and 32 MiB per output. Original
-files already live on disk and are streamed without making a second cached copy.
+Original storage keys are immutable. Deleting an image removes the database record
+and original file, but cached derivatives may remain accessible during the 30-day
+cache lifetime. Stale derivatives can be served beyond that lifetime during an
+upstream outage; a successful upstream 404 does not serve stale content. One Rust
+process should own a cache directory.
 
-Original storage keys are immutable. Deleting an original removes its database
-entry and file, but previously cached derivatives can remain accessible for the
-30-day cache lifetime, as with the old nginx setup. A cached stale derivative can
-be served beyond that lifetime during upstream outages; a successful upstream 404
-does not serve stale content. One Rust process should own a cache directory.
+## Deployment
 
-## Default deployment
+The default docker-compose.yml runs PostgreSQL, imgproxy, and the combined
+Rust/frontend application. Port 9081 is configurable through GALLERYGEN_HTTP_PORT.
+GALLERYGEN_BIND_ADDRESS defaults to 0.0.0.0; use 127.0.0.1 for host-local Caddy.
+Keep the existing Compose project name, .env, JWT secret and imgproxy signing keys.
+Compose sets container storage, cache and frontend paths explicitly.
 
-The default docker-compose.yml defines Postgres, imgproxy, and the combined
-Rust/frontend image. It publishes port 9081, preserving the previous nginx entry
-point. GALLERYGEN_BIND_ADDRESS defaults to 0.0.0.0 to preserve existing connectivity;
-set it to 127.0.0.1 if central Caddy runs on the same host. GALLERYGEN_HTTP_PORT
-can override 9081. See docs/Caddyfile.example for host-based Caddy. Containerized
-Caddy can use the host port or a shared network and the api service address.
+    docker compose up -d --build --remove-orphans
 
-On the existing remote checkout, keep the same directory/Compose project name,
-.env, JWT secret, imgproxy signing keys, and existing named volumes. Then:
+Caddy proxies all requests to the application; see README.md and
+docs/Caddyfile.example. No separate static web root is needed. The public landing
+page and all its assets are embedded from backend/static/landing and served at /.
+The editor remains under /app/. The landing page follows the original cream/coral
+direction and advertises implemented features only. Browser visual QA was not
+available in the development session; route and asset checks pass.
 
-    git fetch origin
-    git switch feature/rust-backend
-    git pull --ff-only
-    docker compose build api
-    docker compose -f docker-compose.go.yml down
-    docker compose up -d --remove-orphans
-    docker compose logs --tail=100 api
-    curl -f http://localhost:9081/health
+## Follow-up product work
 
-Build first so the old application stays available while compiling. The explicit
-legacy down step stops both nginx and Go before Rust starts and frees port 9081.
-Do not pass -v: existing database/original volumes are reused. Deployments that
-already use -p must keep passing their existing project name on all commands.
-The user chose the remote deployment as the integration test environment.
-
-The central Caddy upstream can stay on port 9081. Keep IMGPROXY_ENABLED=true with
-valid hex signing keys to use resizing. Compose explicitly sets storage, cache and
-frontend paths inside the container.
-
-To return to Go/nginx:
-
-    docker compose down
-    docker compose -f docker-compose.go.yml up -d --build --remove-orphans
-
-No schema changes beyond the original seven migrations are introduced by this
-port. The old docker-compose.rust.yml has been replaced by the default stack.
-
-Current validation includes Rust unit/router tests, localhost mock-upstream cache
-tests, Clippy, and Compose structural validation (--no-env-resolution
---no-interpolate). Live Postgres, real imgproxy and Docker image builds remain
-unverified because this environment has no Docker daemon or PostgreSQL binaries.
-
-## Public landing page
-
-Rust now serves a new Photo Mat landing page at `/`, replacing the login redirect.
-The page follows the existing site's cream/coral direction and describes implemented
-features only. It links to sign-in/registration and explains the early-access
-permissions. Its illustrative photo gallery supports local category filtering.
-HTML, CSS, JavaScript, favicon and sample photographs are embedded in the binary
-from backend/static/landing; Docker includes those sources during compilation.
-The old public logo.png and preview.png references returned 404, so they are not reused.
-
-Remove the old Caddy `handle /` static-root block and proxy all requests to port
-9081 to use the new landing page. README.md includes the full site block.
-Landing route/asset tests, HTML asset/anchor checks and JavaScript syntax checks
-pass. Browser visual QA was unavailable: the enabled CUA runtime reported no surfaces.
+Canvas editing and library improvements remain future work: free placement,
+optional snapping, stationary neighboring images, per-placement fit/crop,
+separate mobile reading order, folders/search, and a large multi-select library
+dialog. The runtime migration introduced no new product schema for those features.
