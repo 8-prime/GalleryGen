@@ -1,0 +1,5 @@
+# For Caddy running on the Docker host. For containerized Caddy, connect it to
+# the application's network and use the api service address instead of localhost.
+gallery.example.com {
+    reverse_proxy 127.0.0.1:9081
+}

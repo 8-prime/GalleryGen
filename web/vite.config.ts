@@ -4,12 +4,15 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig(({ command }) => ({
   plugins: [react(), tailwindcss()],
-  // In production (docker/nginx), the SPA is served under /app/
+  // In production, the SPA is served under /app/
   // In dev, keep / so `pnpm dev` works at localhost:5173 as normal
   base: command === 'build' ? '/app/' : '/',
   server: {
     proxy: {
       '/api': 'http://localhost:8080',
+      '/media': 'http://localhost:8080',
+      '/img': 'http://localhost:8080',
+      '/p': 'http://localhost:8080',
     },
   },
   build: {

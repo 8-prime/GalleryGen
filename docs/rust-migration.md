@@ -22,11 +22,11 @@ multi-select library dialog. Do not introduce these schema changes during the po
 - [x] Image upload/list/delete, protected originals and public media implemented.
 - [x] Portfolio/page/image-placement endpoints, including legacy main-page routes implemented.
 - [x] Public JSON and escaped server-rendered portfolio HTML implemented.
-- [ ] Internal imgproxy proxy and bounded persistent disk cache: atomic writes,
+- [x] Internal imgproxy proxy and bounded persistent disk cache implemented: atomic writes,
       concurrent miss coalescing, output format-aware keys, upstream timeouts,
       bounded responses, eviction, and defined deletion/versioning behavior.
 - [ ] Frontend/API compatibility checks against an isolated PostgreSQL database.
-- [ ] Combined frontend/Rust Docker image; replace nginx in Compose; Caddy example.
+- [x] Combined frontend/Rust Dockerfile, opt-in Compose stack without nginx, Caddy example (container build unverified).
 - [ ] Verify uploads, existing users/data, public pages and cached images end to end.
 
 ## Compatibility details discovered
@@ -46,7 +46,7 @@ multi-select library dialog. Do not introduce these schema changes during the po
 Work is on feature/rust-backend and pushed to origin at working checkpoints.
 The backend/ crate is not a deployable replacement. Compose still runs the original
 stack. Image and portfolio routes are ported; live API/database checks remain pending.
-Next implement the internal image proxy/cache and deployment packaging. Database startup applies
+Next run live database/API and container compatibility checks. Database startup applies
 the original SQL using the Goose ledger, transactionally and with a Rust startup
 advisory lock. Stop the Go backend before migrating; its lock differs.
 
@@ -73,3 +73,51 @@ working URLs, fixing the old /img/{UUID} placeholder response. Reordering is ato
 lazy main-page creation locks the portfolio row to avoid duplicate main pages.
 Public HTML retains the existing CSS/navigation using an autoescaped MiniJinja
 template and also handles portfolios without any pages.
+
+## Image proxy and cache
+
+The /img route forwards only correctly signed paths to the configured internal
+imgproxy origin. Signatures are checked before cache hits, including after key
+rotation. Query strings are rejected; transformation options are signed in the path.
+Requests forward Accept; the complete Accept value is part of the SHA-256 cache key.
+Responses carry Vary: Accept, ETag when provided, and X-Cache-Status (MISS/HIT/STALE).
+
+IMAGE_CACHE_PATH defaults to ./data/cache; IMAGE_CACHE_MAX_BYTES defaults to 10 GiB
+(zero disables storage). Entries expire after 30 days, with stale fallback for
+upstream transport/server failures only. Writes use temporary files and atomic
+renames; oldest writes are evicted to stay under the disk limit. Requests for the
+same variant coalesce using bounded striped locks. Upstream processing is limited
+to eight concurrent requests, 120 seconds each, and 32 MiB per output. Original
+files already live on disk and are streamed without making a second cached copy.
+
+Original storage keys are immutable. Deleting an original removes its database
+entry and file, but previously cached derivatives can remain accessible for the
+30-day cache lifetime, as with the old nginx setup. A cached stale derivative can
+be served beyond that lifetime during upstream outages; a successful upstream 404
+does not serve stale content. One Rust process should own a cache directory.
+
+## Deployment preview (not yet validated with Docker)
+
+The default docker-compose.yml continues to run Go/nginx. The opt-in
+docker-compose.rust.yml defines Postgres, imgproxy, and the combined Rust/frontend
+image, with the application bound to 127.0.0.1:9081. The existing central Caddy can
+proxy to that address; see docs/Caddyfile.example. For Caddy in a container use a
+shared Docker network and the api service address instead.
+
+Before switching: back up the database and originals; verify the Rust image and
+API against copies. Use the SAME Compose project name to retain the postgres_data
+and images_data volumes. Stop the old stack without deleting volumes:
+
+    docker compose -p gallerygen -f docker-compose.yml down
+    docker compose -p gallerygen -f docker-compose.rust.yml up -d --build
+
+Substitute the deployment's existing project name for gallerygen. Keep the existing
+.env and set IMGPROXY_ENABLED=true with valid hex signing keys to use resizing.
+Rust Compose explicitly sets storage, cache and frontend paths inside the container.
+Rollback uses the inverse commands, again without deleting volumes. No schema
+changes beyond the original seven migrations are introduced by this port.
+
+Current validation includes Rust unit/router tests, localhost mock-upstream cache
+tests, Clippy, and Compose structural validation (--no-env-resolution
+--no-interpolate). Live Postgres, real imgproxy and Docker image builds remain
+unverified because this environment has no Docker daemon or PostgreSQL binaries.

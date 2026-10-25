@@ -1,0 +1,58 @@
+# Opt-in migration stack. Use the same Compose project name to retain existing volumes.
+# Stop the Go stack before starting this one. Do not run both migration runners together.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gallery
+      POSTGRES_PASSWORD: gallery
+      POSTGRES_DB: gallery
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gallery"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://gallery:gallery@postgres:5432/gallery?sslmode=disable
+      STORAGE_PATH: /data/images
+      FRONTEND_PATH: /app/frontend
+      IMAGE_CACHE_PATH: /data/cache
+      IMGPROXY_BASE_URL: http://imgproxy:8080
+      PORT: "8080"
+    ports:
+      - "127.0.0.1:9081:8080"
+    volumes:
+      - images_data:/data/images
+      - rust_image_cache:/data/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      imgproxy:
+        condition: service_started
+    restart: unless-stopped
+
+  imgproxy:
+    image: darthsim/imgproxy:latest
+    environment:
+      IMGPROXY_KEY: ${IMGPROXY_KEY}
+      IMGPROXY_SALT: ${IMGPROXY_SALT}
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /data/images
+      IMGPROXY_USE_ETAG: "true"
+      IMGPROXY_MAX_SRC_RESOLUTION: 50
+    volumes:
+      - images_data:/data/images:ro
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  images_data:
+  rust_image_cache:

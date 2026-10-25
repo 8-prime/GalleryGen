@@ -30,6 +30,22 @@ impl Signer {
         let signature = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
         format!("/{signature}{path}")
     }
+
+    pub fn verify(&self, path: &str) -> bool {
+        let Some((signature, rest)) = path.strip_prefix('/').and_then(|path| path.split_once('/'))
+        else {
+            return false;
+        };
+        let Ok(signature) = URL_SAFE_NO_PAD.decode(signature) else {
+            return false;
+        };
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(&self.key).expect("HMAC accepts any key length");
+        mac.update(&self.salt);
+        mac.update(b"/");
+        mac.update(rest.as_bytes());
+        mac.verify_slice(&signature).is_ok()
+    }
 }
 
 #[cfg(test)]
@@ -49,5 +65,14 @@ mod tests {
             signer.path("user/photo.jpg", 1600, 0),
             include_str!("../tests/imgproxy-path.txt").trim()
         );
+    }
+
+    #[test]
+    fn verification_rejects_tampering_and_key_rotation() {
+        let signer = Signer::new("0011", "2233").unwrap();
+        let path = signer.path("user/photo.jpg", 400, 400);
+        assert!(signer.verify(&path));
+        assert!(!signer.verify(&path.replace("400", "800")));
+        assert!(!Signer::new("4455", "2233").unwrap().verify(&path));
     }
 }

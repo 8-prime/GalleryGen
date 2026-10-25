@@ -11,6 +11,9 @@ pub struct Config {
     pub frontend_path: PathBuf,
     pub storage_path: PathBuf,
     pub image_signer: Option<std::sync::Arc<crate::imgproxy::Signer>>,
+    pub imgproxy_url: String,
+    pub cache_path: PathBuf,
+    pub cache_max_bytes: u64,
 }
 
 impl Config {
@@ -23,6 +26,15 @@ impl Config {
             bail!("PORT must be greater than zero");
         }
         Ok(Self {
+            imgproxy_url: env::var("IMGPROXY_BASE_URL")
+                .unwrap_or_else(|_| "http://imgproxy:8080".into()),
+            cache_path: env::var_os("IMAGE_CACHE_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| "./data/cache".into()),
+            cache_max_bytes: env::var("IMAGE_CACHE_MAX_BYTES")
+                .unwrap_or_else(|_| "10737418240".into())
+                .parse()
+                .context("IMAGE_CACHE_MAX_BYTES must be a nonnegative integer")?,
             storage_path: env::var_os("STORAGE_PATH")
                 .map(PathBuf::from)
                 .unwrap_or_else(|| "./data/images".into()),

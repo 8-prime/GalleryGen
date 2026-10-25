@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod config;
 pub mod db;
+pub mod image_proxy;
 pub mod images;
 pub mod imgproxy;
 pub mod portfolios;
@@ -24,6 +25,27 @@ pub fn router(frontend_path: &Path) -> Router {
         .layer(TraceLayer::new_for_http())
 }
 
+pub fn application(
+    frontend_path: &Path,
+    state: auth::AppState,
+    proxy: Option<std::sync::Arc<image_proxy::ImageProxy>>,
+) -> Router {
+    let mut app = router(frontend_path).merge(
+        auth::routes()
+            .merge(images::routes())
+            .merge(portfolios::routes())
+            .with_state(state),
+    );
+    if let Some(proxy) = proxy {
+        app = app.merge(image_proxy::routes(proxy));
+    }
+    app.layer(tower_http::timeout::TimeoutLayer::with_status_code(
+        axum::http::StatusCode::GATEWAY_TIMEOUT,
+        std::time::Duration::from_secs(120),
+    ))
+    .layer(TraceLayer::new_for_http())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -32,6 +54,33 @@ mod tests {
         http::{Request, StatusCode},
     };
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn combined_routes_enforce_authentication() {
+        let state = auth::AppState {
+            pool: sqlx::postgres::PgPoolOptions::new()
+                .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
+                .unwrap(),
+            jwt_secret: "secret".into(),
+            storage_path: "/nonexistent".into(),
+            image_signer: None,
+        };
+        let app = application(Path::new("/nonexistent"), state, None);
+        for path in [
+            "/api/images",
+            "/api/images/",
+            "/api/portfolios",
+            "/api/portfolios/00000000-0000-0000-0000-000000000001/pages",
+            "/api/portfolios/00000000-0000-0000-0000-000000000001/images",
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        }
+    }
 
     #[tokio::test]
     async fn unknown_api_routes_do_not_return_the_spa() {
