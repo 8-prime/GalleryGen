@@ -1,5 +1,5 @@
 use anyhow::Result;
-use gallerygen_backend::{auth, config::Config, db, router};
+use gallerygen_backend::{auth, config::Config, db, images, portfolios, router};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -19,10 +19,18 @@ async fn main() -> Result<()> {
     let listener =
         tokio::net::TcpListener::bind((std::net::Ipv4Addr::UNSPECIFIED, config.port)).await?;
     tracing::info!(port = config.port, "server starting");
-    let app = router(&config.frontend_path).merge(auth::routes().with_state(auth::AppState {
-        pool: pool.clone(),
-        jwt_secret: config.jwt_secret,
-    }));
+    tokio::fs::create_dir_all(&config.storage_path).await?;
+    let app = router(&config.frontend_path).merge(
+        auth::routes()
+            .merge(images::routes())
+            .merge(portfolios::routes())
+            .with_state(auth::AppState {
+                pool: pool.clone(),
+                jwt_secret: config.jwt_secret,
+                storage_path: config.storage_path,
+                image_signer: config.image_signer,
+            }),
+    );
     axum::serve(listener, app)
         .with_graceful_shutdown(async {
             let _ = tokio::signal::ctrl_c().await;

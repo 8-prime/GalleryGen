@@ -17,6 +17,8 @@ use uuid::Uuid;
 pub struct AppState {
     pub pool: PgPool,
     pub jwt_secret: String,
+    pub storage_path: std::path::PathBuf,
+    pub image_signer: Option<std::sync::Arc<crate::imgproxy::Signer>>,
 }
 
 #[derive(Debug)]
@@ -32,7 +34,7 @@ impl From<sqlx::Error> for ApiError {
         Self(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
     }
 }
-type ApiResult<T> = Result<T, ApiError>;
+pub type ApiResult<T> = Result<T, ApiError>;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -301,6 +303,8 @@ mod tests {
                 .connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")
                 .unwrap(),
             jwt_secret: "secret".into(),
+            storage_path: "/nonexistent/gallerygen".into(),
+            image_signer: None,
         };
         for path in ["/api/auth/me", "/api/admin/users"] {
             let response = routes()

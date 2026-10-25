@@ -9,6 +9,8 @@ pub struct Config {
     pub admin_password: Option<String>,
     pub port: u16,
     pub frontend_path: PathBuf,
+    pub storage_path: PathBuf,
+    pub image_signer: Option<std::sync::Arc<crate::imgproxy::Signer>>,
 }
 
 impl Config {
@@ -21,6 +23,17 @@ impl Config {
             bail!("PORT must be greater than zero");
         }
         Ok(Self {
+            storage_path: env::var_os("STORAGE_PATH")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| "./data/images".into()),
+            image_signer: if env::var("IMGPROXY_ENABLED").as_deref() == Ok("true") {
+                Some(std::sync::Arc::new(crate::imgproxy::Signer::new(
+                    &env::var("IMGPROXY_KEY").context("IMGPROXY_KEY is required")?,
+                    &env::var("IMGPROXY_SALT").context("IMGPROXY_SALT is required")?,
+                )?))
+            } else {
+                None
+            },
             database_url: env::var("DATABASE_URL").context("DATABASE_URL is required")?,
             jwt_secret: env::var("JWT_SECRET")
                 .ok()
