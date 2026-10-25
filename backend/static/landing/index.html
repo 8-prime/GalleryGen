@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f5f0">
+  <meta name="description" content="A considered home for your photography. Bring your images together, arrange them into portfolio pages, and share your work with Photo Mat.">
+  <meta property="og:title" content="Photo Mat — A home for your photography">
+  <meta property="og:description" content="Your photographs. Their own space. Build and share a portfolio with Photo Mat.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://photo-mat.com/">
+  <meta property="og:image" content="https://photo-mat.com/landing/lake.jpg">
+  <title>Photo Mat — A home for your photography</title>
+  <link rel="canonical" href="https://photo-mat.com/">
+  <link rel="icon" href="/landing/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/landing/style.css">
+  <script src="/landing/gallery.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="header wrap">
+    <a class="brand" href="/" aria-label="Photo Mat home"><span class="brand-icon" aria-hidden="true"></span>photo mat<span class="brand-period">.</span></a>
+    <nav aria-label="Main navigation">
+      <a class="nav-about" href="#how-it-works">How it works</a>
+      <a class="nav-login" href="/app/login">Sign in <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="hero-topline"><span class="dot" aria-hidden="true"></span>A home for your photography</div>
+      <h1 id="hero-title">Your photographs.<br>Their <em>own space.</em></h1>
+      <div class="hero-bottom">
+        <p>A place for the frames you keep coming back to.<br class="desktop-break"> Bring them together. Give them room. Share your point of view.</p>
+        <a class="button button-dark" href="/app/login">Open Photo Mat <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+
+    <section class="showcase wrap" aria-label="Illustrative portfolio gallery">
+      <div class="gallery-header">
+        <div class="gallery-title"><span class="small-label">A little perspective</span><span class="sample-label">Sample portfolio</span></div>
+        <div class="gallery-filters" role="group" aria-label="Filter sample photographs" hidden>
+          <button type="button" data-filter="all" aria-pressed="true">Selected work</button>
+          <button type="button" data-filter="day" aria-pressed="false">Daylight</button>
+          <button type="button" data-filter="night" aria-pressed="false">After dark</button>
+        </div>
+      </div>
+      <div class="photo-grid" data-gallery data-view="all">
+        <figure class="photo photo-highlands" data-category="day">
+          <img src="/landing/highlands.jpg" alt="Soft clouds and evening light over a green mountain valley" width="1000" height="596" fetchpriority="high">
+          <figcaption><span>01 / Into the quiet</span><span>Daylight</span></figcaption>
+        </figure>
+        <figure class="photo photo-lake" data-category="day">
+          <img src="/landing/lake.jpg" alt="A wooden boathouse beside a still alpine lake, with mountains reflected in the water" width="1100" height="733" fetchpriority="high">
+          <figcaption><span>02 / A moment, held</span><span>Daylight</span></figcaption>
+        </figure>
+        <figure class="photo photo-mountain" data-category="night">
+          <img src="/landing/mountain.jpg" alt="A star-filled sky and the Milky Way above snow-covered mountain peaks" width="1000" height="667">
+          <figcaption><span>03 / When the world slows</span><span>After dark</span></figcaption>
+        </figure>
+      </div>
+      <div class="gallery-footer"><span data-gallery-status aria-live="polite">Three photographs. One point of view.</span><a href="#how-it-works">Make room for your work <span aria-hidden="true">↓</span></a></div>
+    </section>
+
+    <section class="approach wrap" aria-labelledby="approach-title">
+      <div class="section-intro"><span class="eyebrow">Less between you and your work</span><h2 id="approach-title">The photographs<br>do the talking.</h2></div>
+      <div class="approach-copy"><p class="large-copy">A portfolio is a collection of choices.<br>What to include. What to put together.<br>What to leave a little space around.</p><p>Photo Mat gives you a shared image library and pages to make those choices your own. Arrange your images, adjust their size and spacing, and bring a collection together under one link.</p></div>
+    </section>
+
+    <section class="workflow" id="how-it-works" aria-labelledby="workflow-title">
+      <div class="wrap">
+        <div class="workflow-heading"><span class="eyebrow">From collection to portfolio</span><h2 id="workflow-title">A few steps.<br>A place of your own.</h2></div>
+        <ol class="steps">
+          <li><span class="step-number">01</span><h3>Bring your work together.</h3><p>Upload your photographs to one shared library. Reuse an image across different pages and portfolios.</p><span class="step-detail">One collection, many possibilities</span></li>
+          <li><span class="step-number">02</span><h3>Find the right rhythm.</h3><p>Group images into pages. Reorder and resize them, then adjust the gaps and matte to suit the work.</p><span class="step-detail">A page for each story</span></li>
+          <li><span class="step-number">03</span><h3>Put it out into the world.</h3><p>Publish your portfolio and share its link. On smaller screens, images flow into a simple, readable sequence.</p><span class="step-detail">Made to be seen</span></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="closing wrap" aria-labelledby="closing-title">
+      <div><span class="eyebrow">For the work that matters to you</span><h2 id="closing-title">Give it a<br><em>proper home.</em></h2></div>
+      <div class="closing-action"><a class="button button-coral" href="/app/login">Open Photo Mat <span aria-hidden="true">↗</span></a><p>New here? <a href="/app/register">Create an account.</a><br>During early access, an administrator enables portfolio creation and publishing.</p></div>
+    </section>
+  </main>
+
+  <footer class="footer wrap"><a class="brand" href="/">photo mat<span class="brand-period">.</span></a><p>A little space for your point of view.</p><p class="credits">Illustrative photographs via <a href="https://unsplash.com/">Unsplash</a>.</p></footer>
+</body>
+</html>

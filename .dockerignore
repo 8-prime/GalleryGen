@@ -67,8 +67,12 @@ project.fragment.lock.json
 # Ignore Rider files
 .idea/
 
-# Ignore root Dockerfile only (not nginx/Dockerfile)
+# Ignore root Dockerfile (the application uses backend/Dockerfile)
 ./Dockerfile
 
 # Ignore local frontend build artifacts
 web/dist/
+backend/target/
+.git/
+.env
+firmware/
