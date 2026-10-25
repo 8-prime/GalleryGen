@@ -1,889 +1,1330 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  SortableContext,
-  useSortable,
-  rectSortingStrategy,
-  arrayMove,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+  ArrowLeft,
+  ArrowDown,
+  ArrowUp,
+  Undo2,
+  Redo2,
+  Plus,
+  Images,
+  Smartphone,
+  Monitor,
+  Trash2,
+  ExternalLink,
+  Save,
+  X,
+} from "lucide-react";
 import { api } from "../lib/api";
 import {
-  updatePortfolio,
-  listPages,
+  addImageToPage,
   createPage,
   deletePage,
+  listPages,
   listPageImages,
-  addImageToPage,
   removeImageFromPage,
-  updateImageLayout,
-  reorderPageImages,
+  saveCanvas,
   slugify,
-  type Portfolio,
+  updatePortfolio,
   type Page,
+  type Portfolio,
   type PortfolioImage,
 } from "../lib/portfolios";
-import { listImages, uploadImage } from "../lib/images";
+import {
+  bounds,
+  clampFrame,
+  MAX_HEIGHT,
+  PAGE_WIDTH,
+  snapAxis,
+  toCanvas,
+  type CanvasImage,
+} from "../lib/canvas";
+import { LibraryDialog } from "../components/ImageExplorer";
 import type { Image } from "../lib/types";
+import "../styles/studio.css";
 
-// --- Sortable canvas item ---
-
-interface SortableItemProps {
-  item: PortfolioImage;
-  localColSpan: number;
-  localRowSpan: number;
-  rowBreakBefore: boolean;
-  matte: number;
-  onRemove: () => void;
-  onResizeStart: (e: React.MouseEvent, item: PortfolioImage) => void;
-  onRowResizeStart: (e: React.MouseEvent, item: PortfolioImage) => void;
-  onToggleRowBreak: () => void;
+interface WorkspaceHandle {
+  save: () => Promise<void>;
+  dirty: () => boolean;
 }
-
-function SortableItem({
-  item,
-  localColSpan,
-  localRowSpan,
-  rowBreakBefore,
-  matte,
-  onRemove,
-  onResizeStart,
-  onRowResizeStart,
-  onToggleRowBreak,
-}: SortableItemProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({
-    id: item.id,
-  });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    gridColumn: `span ${localColSpan}`,
-    gridRow: `span ${localRowSpan}`,
-    opacity: isDragging ? 0.4 : 1,
-    position: "relative",
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="group relative rounded-lg overflow-hidden bg-white"
-    >
-      {/* Drag handle covers the image */}
-      <div
-        {...attributes}
-        {...listeners}
-        style={{
-          aspectRatio: `${localColSpan} / ${localRowSpan}`,
-          cursor: isDragging ? "grabbing" : "grab",
-          padding: `${matte}px`,
-        }}
-        className="w-full"
-      >
-        <img
-          src={item.full_url}
-          alt={item.filename}
-          className="w-full h-full"
-          style={{ objectFit: "cover", display: "block" }}
-          draggable={false}
-        />
-      </div>
-
-      {/* Remove button */}
-      <button
-        onClick={onRemove}
-        className="absolute top-1.5 right-1.5 bg-black/60 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
-        title="Remove"
-      >
-        ×
-      </button>
-
-      {/* Row break toggle */}
-      <button
-        onClick={onToggleRowBreak}
-        className={`absolute top-1.5 left-1.5 text-white rounded px-1.5 py-0.5 text-xs transition-opacity z-10 ${
-          rowBreakBefore
-            ? "bg-indigo-600 opacity-100"
-            : "bg-black/50 hover:bg-indigo-500 opacity-0 group-hover:opacity-100"
-        }`}
-        title={rowBreakBefore ? "Remove row break" : "Force new row"}
-      >
-        ↵
-      </button>
-
-      {/* Horizontal resize handle (col span) */}
-      <div
-        onMouseDown={(e) => onResizeStart(e, item)}
-        className="absolute bottom-1.5 right-1.5 bg-black/50 hover:bg-indigo-600 text-white rounded px-1.5 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-ew-resize select-none z-10"
-        title="Drag left/right to resize width"
-      >
-        ⟺
-      </div>
-
-      {/* Vertical resize handle (row span) */}
-      <div
-        onMouseDown={(e) => onRowResizeStart(e, item)}
-        className="absolute bottom-1.5 left-1/2 -translate-x-1/2 bg-black/50 hover:bg-indigo-600 text-white rounded px-1.5 py-0.5 text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-ns-resize select-none z-10"
-        title="Drag up/down to resize height"
-      >
-        ↕
-      </div>
-
-      {/* Span indicator */}
-      <div className="absolute bottom-1.5 left-1.5 bg-black/40 text-white text-xs rounded px-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {localColSpan}×{localRowSpan}
-      </div>
-    </div>
-  );
-}
-
-// --- Main editor ---
-
 export function PortfolioEditor() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const canvasRef = useRef<HTMLDivElement>(null);
-
-  // --- Portfolio metadata ---
-  const { data: portfolio, isLoading: loadingPortfolio } = useQuery({
+  const portfolio = useQuery({
     queryKey: ["portfolios"],
     queryFn: () => api.get("portfolios").json<Portfolio[]>(),
-    select: (list) => list.find((p) => p.id === id),
+    select: (rows) => rows.find((row) => row.id === id),
   });
-
-  const [title, setTitle] = useState("");
-  const [slug, setSlug] = useState("");
-  const [description, setDescription] = useState("");
-  const [published, setPublished] = useState(false);
-  const [gap, setGap] = useState(4);
-  const [matte, setMatte] = useState(0);
-  const [slugEdited, setSlugEdited] = useState(false);
-
-  useEffect(() => {
-    if (portfolio) {
-      setTitle(portfolio.title);
-      setSlug(portfolio.slug);
-      setDescription(portfolio.description ?? "");
-      setPublished(portfolio.published);
-      setGap(portfolio.gap_px ?? 4);
-      setMatte(portfolio.matte_px ?? 0);
-      setSlugEdited(true);
-    }
-  }, [portfolio]);
-
-  const saveMutation = useMutation({
-    mutationFn: () =>
-      updatePortfolio(id!, {
-        title,
-        slug,
-        description: description || undefined,
-        published,
-        gap_px: gap,
-        matte_px: matte,
-      }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["portfolios"] }),
-  });
-
-  // --- Pages ---
-  const { data: pages = [] } = useQuery({
+  const pages = useQuery({
     queryKey: ["pages", id],
     queryFn: () => listPages(id!),
     enabled: !!id,
   });
-
-  const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (pages.length > 0 && !selectedPageId) {
-      setSelectedPageId(pages[0].id);
-    }
-  }, [pages, selectedPageId]);
-
-  const selectedPage = pages.find((p) => p.id === selectedPageId);
-
-  const [newPageTitle, setNewPageTitle] = useState("");
-  const [showNewPage, setShowNewPage] = useState(false);
-
-  const createPageMutation = useMutation({
-    mutationFn: () =>
-      createPage(id!, { title: newPageTitle, sort_order: pages.length }),
-    onSuccess: (page) => {
-      queryClient.invalidateQueries({ queryKey: ["pages", id] });
-      setSelectedPageId(page.id);
-      setNewPageTitle("");
-      setShowNewPage(false);
-    },
-  });
-
-  const deletePageMutation = useMutation({
-    mutationFn: (pageId: string) => deletePage(id!, pageId),
-    onSuccess: (_data, deletedId) => {
-      queryClient.invalidateQueries({ queryKey: ["pages", id] });
-      queryClient.removeQueries({ queryKey: ["page-images", id, deletedId] });
-      if (selectedPageId === deletedId) {
-        setSelectedPageId(pages.find((p) => p.id !== deletedId)?.id ?? null);
-      }
-    },
-  });
-
-  // --- Page images ---
-  const { data: pageImages = [] } = useQuery({
-    queryKey: ["page-images", id, selectedPageId],
-    queryFn: () => listPageImages(id!, selectedPageId!),
-    enabled: !!selectedPageId,
-  });
-
-  // Local ordering for optimistic DnD updates
-  const [localOrder, setLocalOrder] = useState<string[]>([]);
-  useEffect(() => {
-    setLocalOrder(pageImages.map((pi) => pi.id));
-  }, [pageImages]);
-
-  const orderedItems = localOrder
-    .map((oid) => pageImages.find((pi) => pi.id === oid))
-    .filter(Boolean) as PortfolioImage[];
-
-  // Local span overrides for optimistic resize preview
-  const [localColSpans, setLocalColSpans] = useState<Record<string, number>>(
-    {},
-  );
-  const [localRowSpans, setLocalRowSpans] = useState<Record<string, number>>(
-    {},
-  );
-  const [localRowBreaks, setLocalRowBreaks] = useState<Record<string, boolean>>(
-    {},
-  );
-  const getColSpan = (item: PortfolioImage) =>
-    localColSpans[item.id] ?? item.col_span;
-  const getRowSpan = (item: PortfolioImage) =>
-    localRowSpans[item.id] ?? item.row_span;
-  const getRowBreak = (item: PortfolioImage) =>
-    localRowBreaks[item.id] ?? item.row_break_before;
-
-  // --- Library images ---
-  const { data: allImagesData } = useQuery({
-    queryKey: ["images", 0],
-    queryFn: () => listImages(200, 0),
-  });
-  const allImages = allImagesData?.images ?? [];
-  const addedImageIds = new Set(
-    pageImages.map((pi: PortfolioImage) => pi.image_id),
-  );
-
-  // --- Mutations ---
-  const addMutation = useMutation({
-    mutationFn: (imageId: string) =>
-      addImageToPage(id!, selectedPageId!, imageId),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ["page-images", id, selectedPageId],
-      }),
-  });
-
-  const removeMutation = useMutation({
-    mutationFn: (itemId: string) =>
-      removeImageFromPage(id!, selectedPageId!, itemId),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ["page-images", id, selectedPageId],
-      }),
-  });
-
-  const layoutMutation = useMutation({
-    mutationFn: ({
-      itemId,
-      col_span,
-      row_span,
-      row_break_before,
-    }: {
-      itemId: string;
-      col_span: number;
-      row_span: number;
-      row_break_before?: boolean;
-    }) =>
-      updateImageLayout(id!, selectedPageId!, itemId, {
-        col_span,
-        row_span,
-        row_break_before,
-      }),
-    onSuccess: () =>
-      queryClient.invalidateQueries({
-        queryKey: ["page-images", id, selectedPageId],
-      }),
-  });
-
-  const reorderMutation = useMutation({
-    mutationFn: (ids: string[]) => reorderPageImages(id!, selectedPageId!, ids),
-  });
-
-  // --- Library upload ---
-  const uploadInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-
-  async function handleLibraryUpload(files: FileList | null) {
-    if (!files || files.length === 0) return;
-    setUploading(true);
-    try {
-      await Promise.all(Array.from(files).map((f) => uploadImage(f)));
-      queryClient.invalidateQueries({ queryKey: ["images", 0] });
-    } finally {
-      setUploading(false);
-      if (uploadInputRef.current) uploadInputRef.current.value = "";
-    }
-  }
-
-  // --- DnD (reorder within canvas) ---
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = localOrder.indexOf(active.id as string);
-    const newIndex = localOrder.indexOf(over.id as string);
-    const newOrder = arrayMove(localOrder, oldIndex, newIndex);
-    setLocalOrder(newOrder);
-    reorderMutation.mutate(newOrder);
-  }
-
-  // --- Library drag → canvas (HTML5 DnD) ---
-  const [isDragOver, setIsDragOver] = useState(false);
-
-  function handleLibraryDragStart(e: React.DragEvent, imageId: string) {
-    e.dataTransfer.setData("imageId", imageId);
-    e.dataTransfer.effectAllowed = "copy";
-  }
-
-  function handleCanvasDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setIsDragOver(false);
-    const imageId = e.dataTransfer.getData("imageId");
-    if (imageId && selectedPageId && !addedImageIds.has(imageId)) {
-      addMutation.mutate(imageId);
-    }
-  }
-
-  // --- Resize drag ---
-  function handleResizeStart(e: React.MouseEvent, item: PortfolioImage) {
-    e.preventDefault();
-    e.stopPropagation();
-    const startX = e.clientX;
-    const startColSpan = getColSpan(item);
-    const capturedRowSpan = getRowSpan(item);
-    let currentColSpan = startColSpan;
-
-    function onMouseMove(ev: MouseEvent) {
-      if (!canvasRef.current) return;
-      const canvasWidth = canvasRef.current.offsetWidth;
-      const colWidth = canvasWidth / 3;
-      const delta = ev.clientX - startX;
-      const newSpan = Math.max(
-        1,
-        Math.min(3, startColSpan + Math.round(delta / colWidth)),
-      );
-      currentColSpan = newSpan;
-      setLocalColSpans((prev) => ({ ...prev, [item.id]: newSpan }));
-    }
-
-    function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      if (currentColSpan !== startColSpan) {
-        layoutMutation.mutate({
-          itemId: item.id,
-          col_span: currentColSpan,
-          row_span: capturedRowSpan,
-          row_break_before: getRowBreak(item),
-        });
-      }
-    }
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-  }
-
-  function handleRowResizeStart(e: React.MouseEvent, item: PortfolioImage) {
-    e.preventDefault();
-    e.stopPropagation();
-    const startY = e.clientY;
-    const startRowSpan = getRowSpan(item);
-    const capturedColSpan = getColSpan(item);
-    let currentRowSpan = startRowSpan;
-
-    function onMouseMove(ev: MouseEvent) {
-      if (!canvasRef.current) return;
-      const rowUnit = canvasRef.current.offsetWidth / 3;
-      const delta = ev.clientY - startY;
-      const newSpan = Math.max(
-        1,
-        Math.min(3, startRowSpan + Math.round(delta / rowUnit)),
-      );
-      currentRowSpan = newSpan;
-      setLocalRowSpans((prev) => ({ ...prev, [item.id]: newSpan }));
-    }
-
-    function onMouseUp() {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-      if (currentRowSpan !== startRowSpan) {
-        layoutMutation.mutate({
-          itemId: item.id,
-          col_span: capturedColSpan,
-          row_span: currentRowSpan,
-          row_break_before: getRowBreak(item),
-        });
-      }
-    }
-
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-  }
-
-  const handleToggleRowBreak = useCallback(
-    (item: PortfolioImage) => {
-      const newVal = !getRowBreak(item);
-      setLocalRowBreaks((prev) => ({ ...prev, [item.id]: newVal }));
-      layoutMutation.mutate({
-        itemId: item.id,
-        col_span: getColSpan(item),
-        row_span: getRowSpan(item),
-        row_break_before: newVal,
-      });
-    },
-    [pageImages, localColSpans, localRowSpans, localRowBreaks],
-  ); // eslint-disable-line
-
-  function handleTitleChange(val: string) {
-    setTitle(val);
-    if (!slugEdited) setSlug(slugify(val));
-  }
-
-  function handleSave(e: React.FormEvent) {
-    e.preventDefault();
-    saveMutation.mutate();
-  }
-
-  if (loadingPortfolio) {
+  if (portfolio.isLoading || pages.isLoading)
+    return <div className="studio-loading">Opening your portfolio…</div>;
+  if (!portfolio.data || !pages.data)
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Loading…</p>
+      <div className="studio-loading">
+        The portfolio could not be loaded.{" "}
+        <a href="/app/dashboard">Return to portfolios</a>
       </div>
     );
-  }
-
-  if (!portfolio) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">Portfolio not found.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col h-screen bg-gray-100">
-      {/* Header */}
-      <header className="shrink-0 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <button
-          onClick={() => navigate("/app/dashboard")}
-          className="text-sm text-gray-500 hover:text-gray-900"
-        >
-          ← Portfolios
-        </button>
-        <span className="text-sm font-medium text-gray-700 truncate mx-4">
-          {title}
-        </span>
-        <div className="flex items-center gap-3 shrink-0">
+    <PortfolioStudio key={id} portfolio={portfolio.data} pages={pages.data} />
+  );
+}
+
+function PortfolioStudio({
+  portfolio,
+  pages,
+}: {
+  portfolio: Portfolio;
+  pages: Page[];
+}) {
+  const navigate = useNavigate(),
+    query = useQueryClient();
+  const [meta, setMeta] = useState({ ...portfolio });
+  const [pageId, setPageId] = useState(pages[0]?.id ?? "");
+  const [settings, setSettings] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const workspace = useRef<WorkspaceHandle>(null);
+  const settingsRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (settings) settingsRef.current?.showModal();
+  }, [settings]);
+  const current = pages.find((page) => page.id === pageId);
+  const metadataDirty = JSON.stringify(meta) !== JSON.stringify(portfolio);
+  useEffect(() => {
+    const handler = (event: BeforeUnloadEvent) => {
+      if (metadataDirty) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [metadataDirty]);
+  function mayLeave() {
+    return (
+      !(workspace.current?.dirty() || metadataDirty) ||
+      confirm("Discard unsaved changes?")
+    );
+  }
+  async function save() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await workspace.current?.save();
+      await updatePortfolio(portfolio.id, {
+        title: meta.title,
+        slug: meta.slug,
+        description: meta.description ?? undefined,
+        published: meta.published,
+        gap_px: meta.gap_px,
+        matte_px: meta.matte_px,
+      });
+      await query.invalidateQueries({ queryKey: ["portfolios"] });
+      setMessage("All changes saved");
+    } catch {
+      setMessage(
+        "Could not save all changes. Your edits are still here; please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function addPage() {
+    if (workspace.current?.dirty()) {
+      setMessage("Save the current page before adding another.");
+      return;
+    }
+    const title = prompt("Name your page");
+    if (!title?.trim()) return;
+    setBusy(true);
+    try {
+      const page = await createPage(portfolio.id, {
+        title: title.trim(),
+        sort_order: pages.length,
+      });
+      await query.invalidateQueries({ queryKey: ["pages", portfolio.id] });
+      setPageId(page.id);
+    } catch {
+      setMessage("Could not create the page.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="studio">
+      <header className="studio-header">
+        <div className="inline-actions">
+          <button
+            className="icon-button"
+            aria-label="Back to portfolios"
+            onClick={() => {
+              if (mayLeave()) navigate("/app/dashboard");
+            }}
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <span className="studio-wordmark">
+            photo mat<span>.</span>
+          </span>
+          <span className="header-divider" />
+          <strong>{meta.title}</strong>
+          <span className="status-pill">
+            {meta.published ? "Published" : "Draft"}
+          </span>
+        </div>
+        <div className="inline-actions">
+          <button
+            className="studio-button"
+            onClick={() => setSettings(!settings)}
+          >
+            Portfolio settings
+          </button>
           {portfolio.published && (
             <a
+              className="studio-button"
               href={`/p/${portfolio.slug}`}
               target="_blank"
               rel="noreferrer"
-              className="text-sm text-indigo-600 hover:underline"
             >
-              View ↗
+              View <ExternalLink size={14} />
             </a>
           )}
-          {saveMutation.isSuccess && (
-            <span className="text-sm text-green-600">Saved</span>
-          )}
           <button
-            form="editor-form"
-            type="submit"
-            disabled={saveMutation.isPending}
-            className="px-3 py-1.5 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            className="studio-button primary"
+            disabled={busy}
+            onClick={() => void save()}
           >
-            {saveMutation.isPending ? "Saving…" : "Save"}
+            <Save size={15} />
+            {busy ? "Saving…" : "Save changes"}
           </button>
         </div>
       </header>
-
-      {/* Body: 3-panel layout */}
-      <div className="flex flex-1 min-h-0">
-        {/* Left panel: settings + pages */}
-        <aside className="w-60 shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
-          {/* Settings */}
-          <div className="p-4 border-b border-gray-100">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Settings
-            </h2>
-            <form id="editor-form" onSubmit={handleSave} className="space-y-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Title
-                </label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => handleTitleChange(e.target.value)}
-                  required
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Slug
-                </label>
-                <input
-                  type="text"
-                  value={slug}
-                  onChange={(e) => {
-                    setSlug(e.target.value);
-                    setSlugEdited(true);
-                  }}
-                  required
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Description{" "}
-                  <span className="text-gray-400 font-normal">(optional)</span>
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={2}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Gap <span className="text-gray-400 font-normal">{gap}px</span>
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={32}
-                  value={gap}
-                  onChange={(e) => setGap(Number(e.target.value))}
-                  className="w-full accent-indigo-600"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Matte{" "}
-                  <span className="text-gray-400 font-normal">{matte}px</span>
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={64}
-                  value={matte}
-                  onChange={(e) => setMatte(Number(e.target.value))}
-                  className="w-full accent-indigo-600"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  id="published"
-                  type="checkbox"
-                  checked={published}
-                  onChange={(e) => setPublished(e.target.checked)}
-                  className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <label htmlFor="published" className="text-sm text-gray-700">
-                  Published
-                </label>
-              </div>
-            </form>
-          </div>
-
-          {/* Pages */}
-          <div className="p-4 flex-1">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Pages
-            </h2>
-            <ul className="space-y-0.5 mb-3">
-              {pages.map((page: Page) => (
-                <li key={page.id} className="flex items-center gap-1">
-                  <button
-                    onClick={() => setSelectedPageId(page.id)}
-                    className={`flex-1 text-left text-sm px-2 py-1.5 rounded-md truncate ${
-                      selectedPageId === page.id
-                        ? "bg-indigo-50 text-indigo-700 font-medium"
-                        : "text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    {page.title}
-                    {page.type === "main" && (
-                      <span className="ml-1 text-xs text-gray-400">(main)</span>
-                    )}
-                  </button>
-                  {page.type !== "main" && (
-                    <button
-                      onClick={() => {
-                        if (confirm(`Delete page "${page.title}"?`)) {
-                          deletePageMutation.mutate(page.id);
-                        }
-                      }}
-                      className="text-gray-400 hover:text-red-500 text-xs px-1 shrink-0"
-                      title="Delete page"
-                    >
-                      ×
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            {showNewPage ? (
-              <div className="space-y-2">
-                <input
-                  autoFocus
-                  type="text"
-                  placeholder="Page title"
-                  value={newPageTitle}
-                  onChange={(e) => setNewPageTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && newPageTitle.trim())
-                      createPageMutation.mutate();
-                    if (e.key === "Escape") setShowNewPage(false);
-                  }}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => createPageMutation.mutate()}
-                    disabled={
-                      !newPageTitle.trim() || createPageMutation.isPending
-                    }
-                    className="flex-1 text-sm px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    Add
-                  </button>
-                  <button
-                    onClick={() => setShowNewPage(false)}
-                    className="flex-1 text-sm px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
+      {message && (
+        <div
+          role="status"
+          className={`studio-notice ${message.startsWith("Could") ? "error" : ""}`}
+        >
+          {message}
+          <button
+            className="icon-button"
+            aria-label="Dismiss message"
+            onClick={() => setMessage("")}
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      <div className="studio-body">
+        <aside className="page-panel">
+          <span className="panel-label">Portfolio pages</span>
+          <div className="page-list">
+            {pages.map((page, index) => (
               <button
-                onClick={() => setShowNewPage(true)}
-                className="text-sm text-indigo-600 hover:text-indigo-800"
+                key={page.id}
+                disabled={busy}
+                className={page.id === pageId ? "active" : ""}
+                onClick={() => {
+                  if (
+                    page.id !== pageId &&
+                    (!workspace.current?.dirty() ||
+                      confirm("Discard unsaved layout changes on this page?"))
+                  )
+                    setPageId(page.id);
+                }}
               >
-                + Add page
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                {page.title}
               </button>
-            )}
+            ))}
           </div>
+          <button
+            className="studio-button"
+            disabled={busy}
+            onClick={() => void addPage()}
+          >
+            <Plus size={14} />
+            Add page
+          </button>
+          <a
+            className="library-shortcut"
+            href="/app/images"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Images size={16} />
+            Open full library <ExternalLink size={12} />
+          </a>
+          <p className="studio-hint">
+            Arrange freely.
+            <br />
+            Other images stay put.
+            <br />
+            <br />
+            Shift-click to select several. Hold Alt to bypass snapping.
+          </p>
+          {current && current.type !== "main" && (
+            <button
+              className="delete-page"
+              disabled={busy}
+              onClick={async () => {
+                if (
+                  !confirm(
+                    `Delete “${current.title}” and its placements? Original photographs will remain in your library.`,
+                  )
+                )
+                  return;
+                setBusy(true);
+                try {
+                  await deletePage(portfolio.id, current.id);
+                  setPageId(pages.find((p) => p.id !== current.id)?.id ?? "");
+                  await query.invalidateQueries({
+                    queryKey: ["pages", portfolio.id],
+                  });
+                } catch {
+                  setMessage("Could not delete the page.");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Delete this page
+            </button>
+          )}
         </aside>
+        {pageId ? (
+          <PageWorkspace
+            key={pageId}
+            portfolio={portfolio.id}
+            pageId={pageId}
+            title={current?.title ?? "Page"}
+            gap={meta.gap_px}
+            matte={meta.matte_px}
+            ref={workspace}
+          />
+        ) : (
+          <div className="studio-empty">
+            <h2>Your first page starts here.</h2>
+            <button
+              className="studio-button primary"
+              onClick={() => void addPage()}
+            >
+              Create a page
+            </button>
+          </div>
+        )}
+      </div>
+      {settings && (
+        <dialog
+          ref={settingsRef}
+          className="settings-shade"
+          onCancel={() => setSettings(false)}
+        >
+          <section
+            className="settings-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Portfolio settings"
+          >
+            <div className="panel-heading">
+              <h2>Portfolio settings</h2>
+              <button
+                className="icon-button"
+                aria-label="Close settings"
+                onClick={() => setSettings(false)}
+              >
+                <X />
+              </button>
+            </div>
+            <label>
+              Title
+              <input
+                value={meta.title}
+                onChange={(e) => setMeta({ ...meta, title: e.target.value })}
+              />
+            </label>
+            <label>
+              Public address
+              <input
+                value={meta.slug}
+                onChange={(e) =>
+                  setMeta({ ...meta, slug: slugify(e.target.value) })
+                }
+              />
+            </label>
+            <label>
+              Description
+              <textarea
+                value={meta.description ?? ""}
+                onChange={(e) =>
+                  setMeta({ ...meta, description: e.target.value })
+                }
+              />
+            </label>
+            <label>
+              Gap for mobile and initial layouts · {meta.gap_px}px
+              <input
+                type="range"
+                min={0}
+                max={40}
+                value={meta.gap_px}
+                onChange={(e) => setMeta({ ...meta, gap_px: +e.target.value })}
+              />
+            </label>
+            <label>
+              Matte · {meta.matte_px}px
+              <input
+                type="range"
+                min={0}
+                max={64}
+                value={meta.matte_px}
+                onChange={(e) =>
+                  setMeta({ ...meta, matte_px: +e.target.value })
+                }
+              />
+            </label>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={meta.published}
+                onChange={(e) =>
+                  setMeta({ ...meta, published: e.target.checked })
+                }
+              />
+              Published
+            </label>
+            <p className="studio-hint">
+              Use Save changes to save these settings and the current page
+              layout.
+            </p>
+            <button
+              className="studio-button primary"
+              onClick={() => setSettings(false)}
+            >
+              Done
+            </button>
+          </section>
+        </dialog>
+      )}
+    </div>
+  );
+}
 
-        {/* Center: canvas */}
-        <main className="flex-1 min-w-0 overflow-y-auto p-6">
-          {!selectedPageId ? (
-            <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-              Select a page to edit.
+function PageWorkspace({
+  portfolio,
+  pageId,
+  title,
+  gap,
+  matte,
+  ref,
+}: {
+  portfolio: string;
+  pageId: string;
+  title: string;
+  gap: number;
+  matte: number;
+  ref: Ref<WorkspaceHandle>;
+}) {
+  const images = useQuery({
+    queryKey: ["page-images", portfolio, pageId],
+    queryFn: () => listPageImages(portfolio, pageId),
+    refetchOnWindowFocus: false,
+  });
+  if (images.isLoading)
+    return <div className="studio-loading">Loading page…</div>;
+  if (!images.data)
+    return (
+      <div className="studio-loading">
+        Could not load the page.{" "}
+        <button onClick={() => void images.refetch()}>Try again</button>
+      </div>
+    );
+  return (
+    <CanvasWorkspace
+      portfolio={portfolio}
+      pageId={pageId}
+      title={title}
+      initial={images.data}
+      gap={gap}
+      matte={matte}
+      ref={ref}
+    />
+  );
+}
+
+interface Gesture {
+  pointer: number;
+  mode: "move" | "resize";
+  startX: number;
+  startY: number;
+  before: CanvasImage[];
+  ids: string[];
+  clientX: number;
+  clientY: number;
+  alt: boolean;
+  shift: boolean;
+}
+function CanvasWorkspace({
+  portfolio,
+  pageId,
+  title,
+  initial,
+  gap,
+  matte,
+  ref,
+}: {
+  portfolio: string;
+  pageId: string;
+  title: string;
+  initial: PortfolioImage[];
+  gap: number;
+  matte: number;
+  ref: Ref<WorkspaceHandle>;
+}) {
+  const query = useQueryClient();
+  const [items, setItems] = useState(() => toCanvas(initial, gap));
+  const [selected, setSelected] = useState<string[]>([]);
+  const [undo, setUndo] = useState<CanvasImage[][]>([]),
+    [redo, setRedo] = useState<CanvasImage[][]>([]);
+  const [dirty, setDirty] = useState(initial.some(image => image.canvas_x === null)),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const [picker, setPicker] = useState<"add" | "replace" | null>(null);
+  const [snap, setSnap] = useState(true),
+    [grid, setGrid] = useState(12),
+    [zoom, setZoom] = useState("fit");
+  const [mobile, setMobile] = useState(false),
+    [inspector, setInspector] = useState<"image" | "order">("image");
+  const [available, setAvailable] = useState(900),
+    [guides, setGuides] = useState<{ x: number | null; y: number | null }>({
+      x: null,
+      y: null,
+    });
+  const viewport = useRef<HTMLDivElement>(null),
+    canvas = useRef<HTMLDivElement>(null),
+    gesture = useRef<Gesture | null>(null);
+  const itemsRef = useRef(items);
+  const busyRef = useRef(busy);
+  useLayoutEffect(() => {
+    itemsRef.current = items;
+    busyRef.current = busy;
+  }, [items, busy]);
+  const width =
+    zoom === "fit"
+      ? Math.min(1200, Math.max(200, available))
+      : (PAGE_WIDTH * +zoom) / 100;
+  const scale = width / PAGE_WIDTH;
+  const height = Math.min(
+    MAX_HEIGHT,
+    Math.max(850, ...items.map((i) => i.canvas_y + i.canvas_height + 500)),
+  );
+  const active = items.find((i) => i.id === selected[0]);
+  function present(next: CanvasImage[]) {
+    itemsRef.current = next;
+    setItems(next);
+  }
+  function commit(next: CanvasImage[], before = itemsRef.current) {
+    setUndo((past) => [...past.slice(-49), before]);
+    setRedo([]);
+    present(next);
+    setDirty(true);
+  }
+  async function save(internal = false) {
+    if (busyRef.current && !internal)
+      throw new Error("A page change is in progress");
+    if (gesture.current) throw new Error("Finish the current gesture first");
+    const snapshot = itemsRef.current;
+    const saved = await saveCanvas(portfolio, pageId, snapshot);
+    query.setQueryData(["page-images", portfolio, pageId], saved);
+    if (itemsRef.current === snapshot) setDirty(false);
+  }
+  useImperativeHandle(ref, () => ({
+    save,
+    dirty: () => dirty || gesture.current !== null,
+  }));
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const observer = new ResizeObserver((entries) =>
+      setAvailable(entries[0].contentRect.width),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    const handler = (event: BeforeUnloadEvent) => {
+      if (dirty) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
+  function history(direction: "undo" | "redo") {
+    if (busy || gesture.current) return;
+    const stack = direction === "undo" ? undo : redo;
+    if (!stack.length) return;
+    const next = stack[stack.length - 1];
+    if (direction === "undo") {
+      setUndo(stack.slice(0, -1));
+      setRedo([...redo, items]);
+    } else {
+      setRedo(stack.slice(0, -1));
+      setUndo([...undo, items]);
+    }
+    present(next);
+    setDirty(true);
+  }
+  useEffect(() => {
+    function key(event: KeyboardEvent) {
+      if (
+        event.target instanceof Element &&
+        event.target.closest("input,textarea,select,dialog,[contenteditable]")
+      )
+        return;
+      if (event.key === "Escape") {
+        if (gesture.current) {
+          present(gesture.current.before);
+          gesture.current = null;
+          setGuides({ x: null, y: null });
+        }
+        setSelected([]);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        history(event.shiftKey ? "redo" : "undo");
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        setSelected(items.map((i) => i.id));
+        return;
+      }
+      if (
+        !selected.length ||
+        busy ||
+        mobile ||
+        !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+      )
+        return;
+      event.preventDefault();
+      const unit = event.shiftKey ? 10 : 1,
+        dx =
+          event.key === "ArrowLeft"
+            ? -unit
+            : event.key === "ArrowRight"
+              ? unit
+              : 0,
+        dy =
+          event.key === "ArrowUp"
+            ? -unit
+            : event.key === "ArrowDown"
+              ? unit
+              : 0;
+      const box = bounds(items.filter((i) => selected.includes(i.id))),
+        x = Math.max(-box.x, Math.min(PAGE_WIDTH - box.x - box.width, dx)),
+        y = Math.max(-box.y, Math.min(MAX_HEIGHT - box.y - box.height, dy));
+      commit(
+        items.map((i) =>
+          selected.includes(i.id)
+            ? { ...i, canvas_x: i.canvas_x + x, canvas_y: i.canvas_y + y }
+            : i,
+        ),
+      );
+    }
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
+  function begin(
+    event: ReactPointerEvent<HTMLDivElement>,
+    image: CanvasImage,
+    mode: "move" | "resize",
+  ) {
+    if (event.button !== 0 || busy || mobile) return;
+    event.stopPropagation();
+    event.preventDefault();
+    if (event.shiftKey && mode === "move") {
+      setSelected((previous) =>
+        previous.includes(image.id)
+          ? previous.filter((id) => id !== image.id)
+          : [...previous, image.id],
+      );
+      return;
+    }
+    const ids =
+      mode === "resize"
+        ? [image.id]
+        : selected.includes(image.id)
+          ? selected
+          : [image.id];
+    setSelected(ids);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = canvas.current!.getBoundingClientRect();
+    gesture.current = {
+      pointer: event.pointerId,
+      mode,
+      startX: (event.clientX - rect.left) / scale,
+      startY: (event.clientY - rect.top) / scale,
+      before: itemsRef.current,
+      ids,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      alt: event.altKey,
+      shift: event.shiftKey,
+    };
+  }
+  useEffect(() => {
+    let animation = 0;
+    function move() {
+      const current = gesture.current,
+        element = canvas.current,
+        scroller = viewport.current;
+      if (!current || !element || !scroller) {
+        animation = 0;
+        return;
+      }
+      const view = scroller.getBoundingClientRect();
+      if (current.clientY > view.bottom - 70)
+        scroller.scrollTop += Math.min(
+          22,
+          (current.clientY - view.bottom + 70) / 3,
+        );
+      if (current.clientY < view.top + 70)
+        scroller.scrollTop -= Math.min(
+          22,
+          (view.top + 70 - current.clientY) / 3,
+        );
+      if (current.clientX > view.right - 50) scroller.scrollLeft += 12;
+      if (current.clientX < view.left + 50) scroller.scrollLeft -= 12;
+      const rect = element.getBoundingClientRect(),
+        dx = (current.clientX - rect.left) / scale - current.startX,
+        dy = (current.clientY - rect.top) / scale - current.startY;
+      const chosen = current.before.filter((i) => current.ids.includes(i.id)),
+        box = bounds(chosen);
+      let x = box.x + dx,
+        y = box.y + dy,
+        gx: number | null = null,
+        gy: number | null = null;
+      if (current.mode === "move") {
+        if (snap && !current.alt) {
+          const others = current.before.filter(
+            (i) => !current.ids.includes(i.id),
+          );
+          const targetsX = [
+            0,
+            PAGE_WIDTH / 2,
+            PAGE_WIDTH,
+            ...others.flatMap((i) => [
+              i.canvas_x,
+              i.canvas_x + i.canvas_width / 2,
+              i.canvas_x + i.canvas_width,
+            ]),
+          ];
+          const targetsY = [
+            0,
+            ...others.flatMap((i) => [
+              i.canvas_y,
+              i.canvas_y + i.canvas_height / 2,
+              i.canvas_y + i.canvas_height,
+            ]),
+          ];
+          if (grid) {
+            for (let n = 0; n <= grid; n++)
+              targetsX.push((n * PAGE_WIDTH) / grid);
+            targetsY.push(
+              (Math.round(y / (PAGE_WIDTH / grid)) * PAGE_WIDTH) / grid,
+            );
+          }
+          const sx = snapAxis(x, box.width, targetsX, 7 / scale),
+            sy = snapAxis(y, box.height, targetsY, 7 / scale);
+          x = sx.value;
+          y = sy.value;
+          gx = sx.guide;
+          gy = sy.guide;
+        }
+        x = Math.max(0, Math.min(PAGE_WIDTH - box.width, x));
+        y = Math.max(0, Math.min(MAX_HEIGHT - box.height, y));
+        present(
+          current.before.map((i) =>
+            current.ids.includes(i.id)
+              ? {
+                  ...i,
+                  canvas_x: i.canvas_x + x - box.x,
+                  canvas_y: i.canvas_y + y - box.y,
+                }
+              : i,
+          ),
+        );
+      } else {
+        const image = chosen[0];
+        let w = Math.max(20, image.canvas_width + dx),
+          h = Math.max(20, image.canvas_height + dy);
+        if (current.shift) h = (w * image.canvas_height) / image.canvas_width;
+        if (snap && !current.alt && grid) {
+          const step = PAGE_WIDTH / grid,
+            right = image.canvas_x + w,
+            bottom = image.canvas_y + h;
+          const rx = Math.round(right / step) * step,
+            ry = Math.round(bottom / step) * step;
+          if (Math.abs(rx - right) < 7 / scale) {
+            w = rx - image.canvas_x;
+            gx = rx;
+          }
+          if (!current.shift && Math.abs(ry - bottom) < 7 / scale) {
+            h = ry - image.canvas_y;
+            gy = ry;
+          }
+        }
+        if (current.shift) h = (w * image.canvas_height) / image.canvas_width;
+        present(
+          current.before.map((i) =>
+            i.id === image.id
+              ? clampFrame({ ...i, canvas_width: w, canvas_height: h })
+              : i,
+          ),
+        );
+      }
+      setGuides({ x: gx, y: gy });
+      animation = requestAnimationFrame(move);
+    }
+    function pointer(event: PointerEvent) {
+      const current = gesture.current;
+      if (!current || current.pointer !== event.pointerId) return;
+      current.clientX = event.clientX;
+      current.clientY = event.clientY;
+      current.alt = event.altKey;
+      current.shift = event.shiftKey;
+      if (!animation) animation = requestAnimationFrame(move);
+    }
+    function finish(event: PointerEvent) {
+      const current = gesture.current;
+      if (!current || current.pointer !== event.pointerId) return;
+      cancelAnimationFrame(animation);
+      animation = 0;
+      gesture.current = null;
+      setGuides({ x: null, y: null });
+      if (event.type === "pointercancel") {
+        present(current.before);
+        return;
+      }
+      if (JSON.stringify(current.before) !== JSON.stringify(itemsRef.current)) {
+        setUndo((past) => [...past.slice(-49), current.before]);
+        setRedo([]);
+        setDirty(true);
+      }
+    }
+    window.addEventListener("pointermove", pointer);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+    return () => {
+      cancelAnimationFrame(animation);
+      window.removeEventListener("pointermove", pointer);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+    };
+  }, [scale, snap, grid]);
+  async function structural(action: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    let layoutSaved = false;
+    try {
+      await save(true);
+      layoutSaved = true;
+      await action();
+      const fresh = await listPageImages(portfolio, pageId);
+      const normalized = toCanvas(fresh, gap);
+      const saved = await saveCanvas(portfolio, pageId, normalized);
+      query.setQueryData(["page-images", portfolio, pageId], saved);
+      present(toCanvas(saved, gap));
+      setUndo([]);
+      setRedo([]);
+      setSelected([]);
+      setDirty(false);
+    } catch {
+      try {
+        if (layoutSaved) {
+          const fresh = await listPageImages(portfolio, pageId);
+          present(toCanvas(fresh, gap));
+          setUndo([]);
+          setRedo([]);
+          setDirty(false);
+        }
+      } catch {
+        /* Keep the visible layout if reloading also fails. */
+      }
+      setError(
+        "Could not complete every change. The page has been refreshed where possible; please retry.",
+      );
+      throw new Error("Page change failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function choose(images: Image[]) {
+    if (picker === "replace" && active) {
+      const image = images[0];
+      commit(
+        items.map((i) =>
+          i.id === active.id
+            ? {
+                ...i,
+                image_id: image.id,
+                filename: image.filename,
+                width: image.width,
+                height: image.height,
+                full_url: image.full_url,
+                thumb_url: image.thumb_url,
+              }
+            : i,
+        ),
+      );
+      setPicker(null);
+      return;
+    }
+    await structural(async () => {
+      for (const image of images)
+        await addImageToPage(portfolio, pageId, image.id);
+    });
+    setPicker(null);
+  }
+  function patch(changes: Partial<CanvasImage>) {
+    if (!active) return;
+    commit(
+      items.map((i) =>
+        i.id === active.id ? clampFrame({ ...i, ...changes }) : i,
+      ),
+    );
+  }
+  const ordered = [...items].sort((a, b) => a.sort_order - b.sort_order);
+  function reorder(index: number, delta: number) {
+    const next = [...ordered],
+      target = index + delta;
+    if (target < 0 || target >= next.length) return;
+    [next[index], next[target]] = [next[target], next[index]];
+    commit(next.map((image, sort_order) => ({ ...image, sort_order })));
+  }
+  return (
+    <>
+      <section className="workspace">
+        <div className="canvas-toolbar">
+          <div className="inline-actions">
+            <h1>{title}</h1>
+            <span className={`save-state ${dirty ? "unsaved" : ""}`}>
+              {dirty ? "Unsaved layout" : "Layout saved"}
+            </span>
+          </div>
+          <div className="inline-actions">
+            <button
+              className="icon-button"
+              aria-label="Undo"
+              title="Undo (Ctrl+Z)"
+              disabled={!undo.length || busy}
+              onClick={() => history("undo")}
+            >
+              <Undo2 size={17} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label="Redo"
+              title="Redo (Ctrl+Shift+Z)"
+              disabled={!redo.length || busy}
+              onClick={() => history("redo")}
+            >
+              <Redo2 size={17} />
+            </button>
+            <span className="header-divider" />
+            <button
+              className={`studio-button ${mobile ? "active" : ""}`}
+              onClick={() => setMobile(!mobile)}
+            >
+              {mobile ? <Monitor size={15} /> : <Smartphone size={15} />}{" "}
+              {mobile ? "Canvas" : "Mobile preview"}
+            </button>
+            <button
+              className="studio-button primary"
+              disabled={busy}
+              onClick={() => setPicker("add")}
+            >
+              <Plus size={15} />
+              Add photographs
+            </button>
+          </div>
+        </div>
+        <div className="canvas-options">
+          <div className="inline-actions">
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={snap}
+                onChange={(e) => setSnap(e.target.checked)}
+              />
+              Snap to guides
+            </label>
+            <select
+              aria-label="Grid guides"
+              value={grid}
+              onChange={(e) => setGrid(+e.target.value)}
+            >
+              <option value={0}>No grid</option>
+              <option value={3}>3-column guides</option>
+              <option value={12}>12-column guides</option>
+            </select>
+          </div>
+          <label className="inline-actions">
+            Zoom{" "}
+            <select
+              aria-label="Canvas zoom"
+              value={zoom}
+              onChange={(e) => setZoom(e.target.value)}
+            >
+              <option value="fit">Fit</option>
+              <option value="50">50%</option>
+              <option value="75">75%</option>
+              <option value="100">100%</option>
+            </select>
+          </label>
+        </div>
+        {error && (
+          <p className="studio-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="canvas-viewport" ref={viewport}>
+          {mobile ? (
+            <div className="mobile-preview" style={{ gap }}>
+              <div className="mobile-preview-title">
+                {title}
+                <small>Reading order · full photographs</small>
+              </div>
+              {ordered.map((image) => (
+                <img
+                  key={image.id}
+                  src={image.full_url}
+                  alt={image.filename}
+                  style={{ padding: matte }}
+                />
+              ))}
+              {!items.length && <p>Add photographs to preview this page.</p>}
             </div>
           ) : (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-gray-700">
-                  {selectedPage?.title}
-                  <span className="ml-2 text-gray-400 font-normal">
-                    ({pageImages.length}{" "}
-                    {pageImages.length === 1 ? "image" : "images"})
-                  </span>
-                </h2>
-                <p className="text-xs text-gray-400">
-                  Drag images from the library → drop here to add. Drag to
-                  reorder. ⟺ width, ↕ height.
-                </p>
-              </div>
-
-              {/* Drop zone wrapper */}
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragOver(true);
-                }}
-                onDragLeave={() => setIsDragOver(false)}
-                onDrop={handleCanvasDrop}
-                className={`min-h-40 rounded-xl border-2 transition-colors ${
-                  isDragOver
-                    ? "border-indigo-400 bg-indigo-50"
-                    : "border-dashed border-gray-300 bg-white"
-                }`}
-              >
-                {orderedItems.length === 0 ? (
-                  <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
-                    {addMutation.isPending
-                      ? "Adding…"
-                      : "Drop images here or click + in the library"}
-                  </div>
-                ) : (
-                  <DndContext
-                    sensors={sensors}
-                    collisionDetection={closestCenter}
-                    onDragEnd={handleDragEnd}
+            <div
+              className="canvas-paper"
+              ref={canvas}
+              onPointerDown={(e) => {
+                if (e.target === e.currentTarget) setSelected([]);
+              }}
+              style={{
+                width,
+                height: height * scale,
+                backgroundSize: grid
+                  ? `${100 / grid}% ${(PAGE_WIDTH / grid) * scale}px`
+                  : undefined,
+                backgroundImage: grid
+                  ? "linear-gradient(to right, #ece9e4 1px, transparent 1px), linear-gradient(to bottom, #ece9e4 1px, transparent 1px)"
+                  : undefined,
+              }}
+            >
+              {!items.length && (
+                <div className="canvas-empty">
+                  <Images size={35} />
+                  <h2>A blank page. Your point of view.</h2>
+                  <p>
+                    Choose photographs from your library, then move and resize
+                    them freely.
+                  </p>
+                  <button
+                    className="studio-button primary"
+                    onClick={() => setPicker("add")}
                   >
-                    <SortableContext
-                      items={localOrder}
-                      strategy={rectSortingStrategy}
-                    >
+                    Choose photographs
+                  </button>
+                </div>
+              )}
+              {items.map((image) => (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Select ${image.filename}`}
+                  aria-pressed={selected.includes(image.id)}
+                  key={image.id}
+                  className={`canvas-frame ${selected.includes(image.id) ? "selected" : ""}`}
+                  style={{
+                    left: image.canvas_x * scale,
+                    top: image.canvas_y * scale,
+                    width: image.canvas_width * scale,
+                    height: image.canvas_height * scale,
+                    padding: matte * scale,
+                  }}
+                  onFocus={() => {
+                    if (!selected.includes(image.id)) setSelected([image.id]);
+                  }}
+                  onPointerDown={(event) => begin(event, image, "move")}
+                >
+                  <img
+                    src={image.full_url}
+                    alt={image.filename}
+                    draggable={false}
+                    style={{
+                      objectFit: image.image_fit,
+                      objectPosition: `${image.position_x}% ${image.position_y}%`,
+                    }}
+                  />
+                  {selected.includes(image.id) && (
+                    <>
+                      <span className="frame-label">
+                        {Math.round(image.canvas_width)} ×{" "}
+                        {Math.round(image.canvas_height)}
+                      </span>
                       <div
-                        ref={canvasRef}
-                        className="p-4 grid"
-                        style={{
-                          gridTemplateColumns: "repeat(3, 1fr)",
-                          gridAutoFlow: "row",
-                          gap: `${gap}px`,
-                        }}
-                      >
-                        {orderedItems.flatMap((item) => [
-                          getRowBreak(item) ? (
-                            <div
-                              key={`break-${item.id}`}
-                              style={{
-                                gridColumn: "1 / -1",
-                                height: 0,
-                                margin: 0,
-                              }}
-                            />
-                          ) : null,
-                          <SortableItem
-                            key={item.id}
-                            item={item}
-                            localColSpan={getColSpan(item)}
-                            localRowSpan={getRowSpan(item)}
-                            rowBreakBefore={getRowBreak(item)}
-                            matte={matte}
-                            onRemove={() => removeMutation.mutate(item.id)}
-                            onResizeStart={handleResizeStart}
-                            onRowResizeStart={handleRowResizeStart}
-                            onToggleRowBreak={() => handleToggleRowBreak(item)}
-                          />,
-                        ])}
-                      </div>
-                    </SortableContext>
-                  </DndContext>
-                )}
+                        className="frame-handle"
+                        role="button"
+                        aria-label={`Resize ${image.filename}`}
+                        onPointerDown={(event) => begin(event, image, "resize")}
+                      />
+                    </>
+                  )}
+                </div>
+              ))}
+              {guides.x !== null && (
+                <div
+                  className="snap-line vertical"
+                  style={{ left: guides.x * scale }}
+                />
+              )}
+              {guides.y !== null && (
+                <div
+                  className="snap-line horizontal"
+                  style={{ top: guides.y * scale }}
+                />
+              )}
+              <div
+                className="canvas-bottom-note"
+                style={{ top: (height - 120) * scale }}
+              >
+                Room to keep going. Drag near the edge to scroll.
               </div>
             </div>
           )}
-        </main>
-
-        {/* Right panel: image library */}
-        <aside className="w-52 shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-gray-100 shrink-0 flex items-center justify-between gap-2">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-              Library
-            </h2>
-            <button
-              onClick={() => uploadInputRef.current?.click()}
-              disabled={uploading}
-              className="text-xs px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50 hrink-0"
-              title="Upload images"
-            >
-              {uploading ? "…" : "+ Upload"}
-            </button>
-            <input
-              ref={uploadInputRef}
-              type="file"
-              multiple
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => handleLibraryUpload(e.target.files)}
-            />
-          </div>
-          <div className="flex-1 overflow-y-auto p-2">
-            {allImages.length === 0 ? (
-              <p className="text-xs text-gray-400 p-2">
-                No images yet. Click + Upload above.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-1.5">
-                {allImages.map((img: Image) => {
-                  const inPage = addedImageIds.has(img.id);
-                  const aspectRatio =
-                    img.width && img.height
-                      ? `${img.width} / ${img.height}`
-                      : "1 / 1";
-                  return (
-                    <div
-                      key={img.id}
-                      draggable={!inPage}
-                      onDragStart={
-                        inPage
-                          ? undefined
-                          : (e) => handleLibraryDragStart(e, img.id)
-                      }
-                      className={`relative group rounded overflow-hidden bg-gray-100 cursor-pointer ${
-                        inPage
-                          ? "opacity-30 cursor-default"
-                          : "hover:ring-2 hover:ring-indigo-400"
-                      }`}
-                      onClick={() => {
-                        if (!inPage && selectedPageId)
-                          addMutation.mutate(img.id);
-                      }}
-                      title={inPage ? img.filename : `Add ${img.filename}`}
-                    >
-                      <div style={{ aspectRatio }}>
-                        <img
-                          src={img.thumb_url}
-                          alt={img.filename}
-                          className="w-full h-full"
-                          style={{ objectFit: "cover", display: "block" }}
-                          draggable={false}
-                        />
-                      </div>
-                      {!inPage && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/20 transition-colors">
-                          <span className="text-white text-xl font-bold opacity-0 group-hover:opacity-100 transition-opacity drop-shadow">
-                            +
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+        </div>
+        <div className="canvas-status">
+          <span>
+            {items.length} photographs · {selected.length} selected
+          </span>
+          <span>
+            Shift-click: select multiple · Arrow keys: nudge · Alt: ignore
+            guides
+          </span>
+        </div>
+      </section>
+      <aside className="inspector">
+        <div className="inspector-tabs">
+          <button
+            className={inspector === "image" ? "active" : ""}
+            onClick={() => setInspector("image")}
+          >
+            Photograph
+          </button>
+          <button
+            className={inspector === "order" ? "active" : ""}
+            onClick={() => setInspector("order")}
+          >
+            Mobile order
+          </button>
+        </div>
+        {inspector === "order" ? (
+          <div className="order-panel">
+            <p className="studio-hint">
+              This sequence is used on phones. Moving frames on the canvas does
+              not change it.
+            </p>
+            {ordered.map((image, index) => (
+              <div className="order-row" key={image.id}>
+                <img src={image.thumb_url} alt="" />
+                <button
+                  className="order-title"
+                  onClick={() => setSelected([image.id])}
+                >
+                  <small>{index + 1}</small>
+                  {image.filename}
+                </button>
+                <div>
+                  <button
+                    className="icon-button"
+                    disabled={index === 0}
+                    aria-label={`Move ${image.filename} earlier`}
+                    onClick={() => reorder(index, -1)}
+                  >
+                    <ArrowUp size={13} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    disabled={index === ordered.length - 1}
+                    aria-label={`Move ${image.filename} later`}
+                    onClick={() => reorder(index, 1)}
+                  >
+                    <ArrowDown size={13} />
+                  </button>
+                </div>
               </div>
-            )}
+            ))}
           </div>
-        </aside>
-      </div>
-    </div>
+        ) : !active ? (
+          <div className="inspector-empty">
+            <Images size={28} />
+            <h2>A closer look</h2>
+            <p>
+              Select a photograph to adjust its frame and how it sits inside it.
+            </p>
+          </div>
+        ) : (
+          <div className="inspector-content">
+            <div className="panel-label">
+              {selected.length > 1
+                ? `${selected.length} photographs selected`
+                : "Selected photograph"}
+            </div>
+            <img
+              className="inspector-preview"
+              src={active.thumb_url}
+              alt={active.filename}
+            />
+            <h2 title={active.filename}>{active.filename}</h2>
+            {selected.length === 1 && (
+              <>
+                <div className="dimension-fields">
+                  {(
+                    [
+                      "canvas_x",
+                      "canvas_y",
+                      "canvas_width",
+                      "canvas_height",
+                    ] as const
+                  ).map((key, index) => (
+                    <label key={key}>
+                      {["X", "Y", "Width", "Height"][index]}
+                      <input
+                        type="number"
+                        min={index < 2 ? 0 : 20}
+                        max={
+                          key === "canvas_y" || key === "canvas_height"
+                            ? MAX_HEIGHT
+                            : PAGE_WIDTH
+                        }
+                        step={1}
+                        value={Math.round(active[key])}
+                        onChange={(e) => {
+                          if (Number.isFinite(e.target.valueAsNumber))
+                            patch({ [key]: e.target.valueAsNumber });
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <label>
+                  Image mode
+                  <select
+                    value={active.image_fit}
+                    onChange={(e) =>
+                      patch({
+                        image_fit: e.target.value as "cover" | "contain",
+                      })
+                    }
+                  >
+                    <option value="cover">Fill frame (crop)</option>
+                    <option value="contain">Fit whole photograph</option>
+                  </select>
+                </label>
+                {active.image_fit === "cover" && (
+                  <>
+                    <label>
+                      Crop position · horizontal
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={active.position_x}
+                        onChange={(e) => patch({ position_x: +e.target.value })}
+                      />
+                    </label>
+                    <label>
+                      Crop position · vertical
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={active.position_y}
+                        onChange={(e) => patch({ position_y: +e.target.value })}
+                      />
+                    </label>
+                  </>
+                )}
+                <button
+                  className="studio-button"
+                  onClick={() => setPicker("replace")}
+                >
+                  Replace photograph
+                </button>
+                <button
+                  className="studio-button"
+                  onClick={() =>
+                    patch({
+                      canvas_height: active.width
+                        ? Math.max(
+                            20,
+                            (active.canvas_width * active.height) /
+                              active.width,
+                          )
+                        : active.canvas_height,
+                    })
+                  }
+                >
+                  Use original proportions
+                </button>
+              </>
+            )}
+            <button
+              className="studio-button danger"
+              disabled={busy}
+              onClick={() => {
+                void structural(async () => {
+                  for (const id of selected)
+                    await removeImageFromPage(portfolio, pageId, id);
+                }).catch(() => {});
+              }}
+            >
+              <Trash2 size={14} />
+              Remove {selected.length > 1 ? "selected" : "from page"}
+            </button>
+            <p className="studio-hint">
+              Removing a placement keeps the original in your library. Additions
+              and removals save the current layout and start a new undo history.
+            </p>
+          </div>
+        )}
+      </aside>
+      <LibraryDialog
+        open={picker !== null}
+        onClose={() => {
+          if (!busy) setPicker(null);
+        }}
+        onChoose={choose}
+        excludedIds={picker === "replace" ? [] : items.map((i) => i.image_id)}
+        single={picker === "replace"}
+      />
+    </>
   );
 }

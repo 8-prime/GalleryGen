@@ -82,9 +82,8 @@ The editor remains under /app/. The landing page follows the original cream/cora
 direction and advertises implemented features only. Browser visual QA was not
 available in the development session; route and asset checks pass.
 
-## Follow-up product work
+## Canvas and library work
 
-Canvas editing and library improvements remain future work: free placement,
-optional snapping, stationary neighboring images, per-placement fit/crop,
-separate mobile reading order, folders/search, and a large multi-select library
-dialog. The runtime migration introduced no new product schema for those features.
+The canvas editor and library improvements are implemented on feature/canvas-editor.
+See docs/canvas-editor.md for behavior, migrations 008/009 and verification status.
+Automatic layout remains future work.

@@ -6,6 +6,10 @@ image transformations through a single application port.
 The public landing page at `/` is embedded in the Rust binary, including its
 photographs and styles. The editor remains under `/app/`.
 
+The portfolio editor uses free canvas placement with optional guides, per-image
+fit/crop and a separate mobile reading order. The image library provides folders,
+search and a large multi-select picker. See [editor notes](docs/canvas-editor.md).
+
 ## Deployment
 
 Configure `.env` from `.env.example`, then run:

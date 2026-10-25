@@ -15,6 +15,8 @@ const MIGRATIONS: &[(i64, &str)] = &[
     (5, include_str!("../migrations/005_row_break.sql")),
     (6, include_str!("../migrations/006_admin.sql")),
     (7, include_str!("../migrations/007_default_no_perms.sql")),
+    (8, include_str!("../migrations/008_canvas.sql")),
+    (9, include_str!("../migrations/009_library_folders.sql")),
 ];
 
 pub async fn connect(url: &str) -> Result<PgPool> {

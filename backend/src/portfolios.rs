@@ -55,7 +55,11 @@ async fn own(state: &AppState, user: Uuid, portfolio: Uuid) -> ApiResult<()> {
     }
     Ok(())
 }
-async fn page(state: &AppState, user: Uuid, params: &HashMap<String, String>) -> ApiResult<Uuid> {
+pub(crate) async fn page(
+    state: &AppState,
+    user: Uuid,
+    params: &HashMap<String, String>,
+) -> ApiResult<Uuid> {
     let portfolio = id(params, "id")?;
     own(state, user, portfolio).await?;
     if params.contains_key("pageId") {
@@ -267,9 +271,12 @@ fn item_response(state: &AppState, row: PgRow) -> Value {
         "col_start":row.get::<i32,_>("col_start"),"row_start":row.get::<i32,_>("row_start"),"col_span":row.get::<i32,_>("col_span"),"row_span":row.get::<i32,_>("row_span"),
         "row_break_before":row.get::<bool,_>("row_break_before"),"filename":row.get::<String,_>("filename"),"mime_type":row.get::<String,_>("mime_type"),
         "width":row.get::<Option<i32>,_>("width").unwrap_or(0),"height":row.get::<Option<i32>,_>("height").unwrap_or(0),
+        "canvas_x":row.get::<Option<f64>,_>("canvas_x"),"canvas_y":row.get::<Option<f64>,_>("canvas_y"),
+        "canvas_width":row.get::<Option<f64>,_>("canvas_width"),"canvas_height":row.get::<Option<f64>,_>("canvas_height"),
+        "image_fit":row.get::<String,_>("image_fit"),"position_x":row.get::<f64,_>("position_x"),"position_y":row.get::<f64,_>("position_y"),
         "thumb_url":image_url(state,image,&key,true),"full_url":image_url(state,image,&key,false)})
 }
-async fn items(state: &AppState, page: Uuid) -> ApiResult<Vec<Value>> {
+pub(crate) async fn items(state: &AppState, page: Uuid) -> ApiResult<Vec<Value>> {
     Ok(sqlx::query(ITEMS)
         .bind(page)
         .fetch_all(&state.pool)
@@ -319,6 +326,15 @@ async fn add_item(
         .await?;
     let item:Uuid=sqlx::query_scalar("INSERT INTO grid_items(page_id,image_id,col_start,row_start,sort_order) VALUES($1,$2,1,$3,$4) RETURNING id")
         .bind(page).bind(image).bind(count as i32+1).bind(count as i32).fetch_one(&mut *tx).await?;
+    let bottom: Option<f64> =
+        sqlx::query_scalar("SELECT max(canvas_y+canvas_height) FROM grid_items WHERE page_id=$1")
+            .bind(page)
+            .fetch_one(&mut *tx)
+            .await?;
+    if let Some(bottom) = bottom {
+        sqlx::query("UPDATE grid_items SET canvas_x=0,canvas_y=$2,canvas_width=400,canvas_height=300 WHERE id=$1")
+            .bind(item).bind((bottom+12.0).min(99700.0)).execute(&mut *tx).await?;
+    }
     tx.commit().await?;
     let result = items(&state, page)
         .await?
@@ -432,7 +448,15 @@ async fn public(State(state): State<AppState>, Path(params): Params) -> ApiResul
                 image.as_object_mut().unwrap().remove(key);
             }
         }
-        pages.push(json!({"id":page,"title":row.get::<String,_>("title"),"slug":row.get::<String,_>("slug"),"sort_order":row.get::<i32,_>("sort_order"),"images":images}));
+        let canvas = images.iter().any(|image| image["canvas_x"].is_number());
+        let canvas_height = images
+            .iter()
+            .map(|image| {
+                image["canvas_y"].as_f64().unwrap_or(0.0)
+                    + image["canvas_height"].as_f64().unwrap_or(0.0)
+            })
+            .fold(1.0, f64::max);
+        pages.push(json!({"canvas":canvas,"canvas_height":canvas_height,"id":page,"title":row.get::<String,_>("title"),"slug":row.get::<String,_>("slug"),"sort_order":row.get::<i32,_>("sort_order"),"images":images}));
     }
     Ok(Json(
         json!({"id":portfolio,"title":title,"description":description,"pages":pages}),
@@ -515,6 +539,23 @@ async fn public_html(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn canvas_html_uses_free_positions_and_individual_crop_settings() {
+        let html = render_html(
+            json!({"title":"Canvas","description":null,"gap_px":8,"matte_px":0,"pages":[{
+            "slug":"main","title":"Main","canvas":true,"canvas_height":1000,"images":[{
+                "url":"/media/image","filename":"Photo","col_span":1,"row_span":1,
+                "canvas_x":120,"canvas_y":250,"canvas_width":600,"canvas_height":300,
+                "image_fit":"contain","position_x":30,"position_y":70
+            }]}]}),
+        )
+        .unwrap();
+        assert!(html.contains("left:10"));
+        assert!(html.contains("top:25"));
+        assert!(html.contains("width:50"));
+        assert!(html.contains("object-fit:contain;object-position:30% 70%"));
+        assert!(html.contains("aspect-ratio: auto !important"));
+    }
     #[test]
     fn legacy_slug_rules() {
         assert_eq!(slugify("  My Photos / 2026! "), "my-photos-2026");
