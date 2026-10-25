@@ -55,11 +55,39 @@ The updated Hooks lint rules found two existing ref writes during canvas render.
 These now synchronize in a layout effect before user events, preserving the
 canvas event handlers' current values without modifying refs during rendering.
 
+## Reproducible frontend installs
+
+The Docker build initially used an unpinned pnpm version, while the lockfile had
+been updated locally with pnpm 10.7.0. The newer container toolchain enforced a
+one-day minimum release age and rejected `baseline-browser-mapping@2.11.33`,
+published on 25 October at 17:28 UTC. Local verification had missed that policy.
+
+`web/package.json` now pins pnpm 12.15.0. Docker installs that exact version
+directly from npm, avoiding differences in bundled Corepack launchers, and copies
+`pnpm-workspace.yaml` before the frozen install. The workspace explicitly enables
+the 1,440-minute minimum release age in strict mode. See the
+[pnpm dependency-resolution settings](https://github.com/pnpm/pnpm/blob/main/pnpm/docs/settings/dependency-resolution.md).
+
+The lockfile was regenerated with the pinned toolchain and policy. It selects
+the mature, patched `baseline-browser-mapping@2.11.32`; the frontend audit remains
+clear. No package-age exceptions or trusted-lockfile bypasses are configured.
+The additional lockfile boot document records the pinned pnpm distribution.
+
+For local frontend development, install the same package manager before running
+`pnpm install --frozen-lockfile`:
+
+```sh
+npm install --global pnpm@12.15.0
+```
+
 ## Verification
 
 - Nine frontend tests cover canvas geometry and upload transport, destination,
   authentication, progress, save acknowledgement and failure handling.
 - Production build, lint and the security audit pass.
+- The frozen install passes with pnpm 12.15.0 and strict release-age verification.
+- A fresh `node:22-alpine` Docker frontend-stage build passes the frozen install
+  and production build with the same checked-in toolchain and policy.
 - All 24 Rust unit/router/rendering tests pass. The PostgreSQL integration test
   remains ignored because no isolated test database is configured.
 - Browser verification uses the real library UI against a disposable local mock

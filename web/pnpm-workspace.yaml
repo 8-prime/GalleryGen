@@ -1,0 +1,3 @@
+# Resolve updates using the same release-age policy enforced by frozen installs.
+minimumReleaseAge: 1440
+minimumReleaseAgeStrict: true
