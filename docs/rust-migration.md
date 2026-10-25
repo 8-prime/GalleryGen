@@ -17,8 +17,8 @@ multi-select library dialog. Do not introduce these schema changes during the po
 
 - [x] Axum server foundation, tracing, shutdown, health, frontend serving under /app.
 - [x] Port imgproxy signed path generation with an independent compatibility vector.
-- [ ] PostgreSQL integration and existing Goose migration history compatibility.
-- [ ] Authentication, admin bootstrap, permissions and admin routes.
+- [x] PostgreSQL integration and Goose history support implemented (live database verification pending).
+- [x] Authentication, admin bootstrap, permissions and admin routes implemented (live verification pending).
 - [ ] Image upload/list/delete, protected originals and public media.
 - [ ] Portfolio/page/image-placement endpoints, including legacy main-page routes.
 - [ ] Public JSON and escaped server-rendered portfolio HTML.
@@ -43,7 +43,23 @@ multi-select library dialog. Do not introduce these schema changes during the po
 
 ## Current status and continuation
 
-The backend/ crate is an initial foundation, not a deployable replacement. Compose
-still runs the original stack. Next implement database migration compatibility and
-authentication. Run commands from backend/: cargo test, cargo clippy --all-targets
--- -D warnings. FRONTEND_PATH defaults to ../web/dist relative to the working directory.
+Work is on feature/rust-backend and pushed to origin at working checkpoints.
+The backend/ crate is not a deployable replacement. Compose still runs the original
+stack. Next port image endpoints and portfolio CRUD. Database startup now applies
+the original SQL using the Goose ledger, transactionally and with a Rust startup
+advisory lock. Stop the Go backend before migrating; its lock differs.
+
+Authentication preserves the existing token claim shape and lifetimes, bcrypt cost
+12, default permissions, admin bootstrap without resetting existing passwords, and
+OAuth 501 stubs. Legacy access/refresh tokens have no type distinction; this behavior
+is preserved for compatibility and should be revisited separately.
+
+Run commands from backend/: cargo test; cargo clippy --all-targets -- -D warnings.
+FRONTEND_PATH defaults to ../web/dist relative to the working directory. DATABASE_URL
+and JWT_SECRET are required. Export environment variables before cargo run.
+
+Live database tests are pending: Docker is installed but its daemon/socket is absent.
+Use an EMPTY disposable PostgreSQL database and run:
+GALLERYGEN_TEST_DATABASE_URL=postgres://... cargo test --test database -- --ignored
+The test leaves fixtures behind; discard the database afterward. Also verify startup
+against a database actually created by Go/Goose before deployment.
