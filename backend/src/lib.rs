@@ -4,11 +4,12 @@ pub mod db;
 pub mod image_proxy;
 pub mod images;
 pub mod imgproxy;
+pub mod landing;
 pub mod portfolios;
 
 use std::path::Path;
 
-use axum::{Router, response::Redirect, routing::get};
+use axum::{Router, routing::get};
 use tower_http::{
     services::{ServeDir, ServeFile},
     trace::TraceLayer,
@@ -18,8 +19,7 @@ pub fn router(frontend_path: &Path) -> Router {
     // SPA fallback is scoped to /app: unknown API URLs must remain 404s.
     let frontend =
         ServeDir::new(frontend_path).fallback(ServeFile::new(frontend_path.join("index.html")));
-    Router::new()
-        .route("/", get(|| async { Redirect::temporary("/app/login") }))
+    landing::routes()
         .route("/health", get(|| async { "ok" }))
         .nest_service("/app", frontend)
         .layer(TraceLayer::new_for_http())

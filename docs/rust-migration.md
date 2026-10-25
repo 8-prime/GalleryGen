@@ -141,3 +141,18 @@ Current validation includes Rust unit/router tests, localhost mock-upstream cach
 tests, Clippy, and Compose structural validation (--no-env-resolution
 --no-interpolate). Live Postgres, real imgproxy and Docker image builds remain
 unverified because this environment has no Docker daemon or PostgreSQL binaries.
+
+## Public landing page
+
+Rust now serves a new Photo Mat landing page at `/`, replacing the login redirect.
+The page follows the existing site's cream/coral direction and describes implemented
+features only. It links to sign-in/registration and explains the early-access
+permissions. Its illustrative photo gallery supports local category filtering.
+HTML, CSS, JavaScript, favicon and sample photographs are embedded in the binary
+from backend/static/landing; Docker includes those sources during compilation.
+The old public logo.png and preview.png references returned 404, so they are not reused.
+
+Remove the old Caddy `handle /` static-root block and proxy all requests to port
+9081 to use the new landing page. README.md includes the full site block.
+Landing route/asset tests, HTML asset/anchor checks and JavaScript syntax checks
+pass. Browser visual QA was unavailable: the enabled CUA runtime reported no surfaces.

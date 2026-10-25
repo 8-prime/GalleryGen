@@ -12,6 +12,7 @@ WORKDIR /build/backend
 COPY backend/Cargo.toml backend/Cargo.lock ./
 COPY backend/src ./src
 COPY backend/templates ./templates
+COPY backend/static ./static
 COPY api/migrations /build/api/migrations
 RUN cargo build --locked --release
 
