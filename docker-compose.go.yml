@@ -1,5 +1,4 @@
-# Opt-in migration stack. Use the same Compose project name to retain existing volumes.
-# Stop the Go stack before starting this one. Do not run both migration runners together.
+# Legacy Go/nginx deployment retained as a fallback.
 services:
   postgres:
     image: postgres:16-alpine
@@ -18,26 +17,16 @@ services:
 
   api:
     build:
-      context: .
-      dockerfile: backend/Dockerfile
+      context: ./api
+      dockerfile: Dockerfile
     env_file: .env
     environment:
       DATABASE_URL: postgres://gallery:gallery@postgres:5432/gallery?sslmode=disable
-      STORAGE_PATH: /data/images
-      FRONTEND_PATH: /app/frontend
-      IMAGE_CACHE_PATH: /data/cache
-      IMGPROXY_BASE_URL: http://imgproxy:8080
-      PORT: "8080"
-    ports:
-      - "127.0.0.1:9081:8080"
-    volumes:
-      - images_data:/data/images
-      - rust_image_cache:/data/cache
     depends_on:
       postgres:
         condition: service_healthy
-      imgproxy:
-        condition: service_started
+    volumes:
+      - images_data:/data/images
     restart: unless-stopped
 
   imgproxy:
@@ -52,7 +41,20 @@ services:
       - images_data:/data/images:ro
     restart: unless-stopped
 
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+    ports:
+      - "9081:80"
+    volumes:
+      - nginx_cache:/var/cache/nginx
+    depends_on:
+      - api
+      - imgproxy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   images_data:
-  rust_image_cache:
+  nginx_cache:

@@ -26,7 +26,7 @@ multi-select library dialog. Do not introduce these schema changes during the po
       concurrent miss coalescing, output format-aware keys, upstream timeouts,
       bounded responses, eviction, and defined deletion/versioning behavior.
 - [ ] Frontend/API compatibility checks against an isolated PostgreSQL database.
-- [x] Combined frontend/Rust Dockerfile, opt-in Compose stack without nginx, Caddy example (container build unverified).
+- [x] Combined frontend/Rust Dockerfile, default Compose stack without nginx, Caddy example (container build unverified).
 - [ ] Verify uploads, existing users/data, public pages and cached images end to end.
 
 ## Compatibility details discovered
@@ -39,13 +39,15 @@ multi-select library dialog. Do not introduce these schema changes during the po
   responses on upstream failure. It allows 100 MB uploads and 120-second API timeouts.
 - /img strips its prefix before forwarding to imgproxy; signed paths must survive
   forwarding unchanged. imgproxy reads the shared originals volume read-only.
-- Keep the existing Go/Compose deployment available until compatibility checks pass.
+- The legacy Go/nginx stack is retained in docker-compose.go.yml as a fallback.
 
 ## Current status and continuation
 
 Work is on feature/rust-backend and pushed to origin at working checkpoints.
-The backend/ crate is not a deployable replacement. Compose still runs the original
-stack. Image and portfolio routes are ported; live API/database checks remain pending.
+The default Compose stack now runs the Rust backend and frontend without nginx.
+The owner chose to validate it on their existing single-user remote deployment and
+accepts possible data loss. Image and portfolio routes are ported; live API/database
+checks remain pending.
 Next run live database/API and container compatibility checks. Database startup applies
 the original SQL using the Goose ledger, transactionally and with a Rust startup
 advisory lock. Stop the Go backend before migrating; its lock differs.
@@ -96,26 +98,44 @@ entry and file, but previously cached derivatives can remain accessible for the
 be served beyond that lifetime during upstream outages; a successful upstream 404
 does not serve stale content. One Rust process should own a cache directory.
 
-## Deployment preview (not yet validated with Docker)
+## Default deployment
 
-The default docker-compose.yml continues to run Go/nginx. The opt-in
-docker-compose.rust.yml defines Postgres, imgproxy, and the combined Rust/frontend
-image, with the application bound to 127.0.0.1:9081. The existing central Caddy can
-proxy to that address; see docs/Caddyfile.example. For Caddy in a container use a
-shared Docker network and the api service address instead.
+The default docker-compose.yml defines Postgres, imgproxy, and the combined
+Rust/frontend image. It publishes port 9081, preserving the previous nginx entry
+point. GALLERYGEN_BIND_ADDRESS defaults to 0.0.0.0 to preserve existing connectivity;
+set it to 127.0.0.1 if central Caddy runs on the same host. GALLERYGEN_HTTP_PORT
+can override 9081. See docs/Caddyfile.example for host-based Caddy. Containerized
+Caddy can use the host port or a shared network and the api service address.
 
-Before switching: back up the database and originals; verify the Rust image and
-API against copies. Use the SAME Compose project name to retain the postgres_data
-and images_data volumes. Stop the old stack without deleting volumes:
+On the existing remote checkout, keep the same directory/Compose project name,
+.env, JWT secret, imgproxy signing keys, and existing named volumes. Then:
 
-    docker compose -p gallerygen -f docker-compose.yml down
-    docker compose -p gallerygen -f docker-compose.rust.yml up -d --build
+    git fetch origin
+    git switch feature/rust-backend
+    git pull --ff-only
+    docker compose build api
+    docker compose -f docker-compose.go.yml down
+    docker compose up -d --remove-orphans
+    docker compose logs --tail=100 api
+    curl -f http://localhost:9081/health
 
-Substitute the deployment's existing project name for gallerygen. Keep the existing
-.env and set IMGPROXY_ENABLED=true with valid hex signing keys to use resizing.
-Rust Compose explicitly sets storage, cache and frontend paths inside the container.
-Rollback uses the inverse commands, again without deleting volumes. No schema
-changes beyond the original seven migrations are introduced by this port.
+Build first so the old application stays available while compiling. The explicit
+legacy down step stops both nginx and Go before Rust starts and frees port 9081.
+Do not pass -v: existing database/original volumes are reused. Deployments that
+already use -p must keep passing their existing project name on all commands.
+The user chose the remote deployment as the integration test environment.
+
+The central Caddy upstream can stay on port 9081. Keep IMGPROXY_ENABLED=true with
+valid hex signing keys to use resizing. Compose explicitly sets storage, cache and
+frontend paths inside the container.
+
+To return to Go/nginx:
+
+    docker compose down
+    docker compose -f docker-compose.go.yml up -d --build --remove-orphans
+
+No schema changes beyond the original seven migrations are introduced by this
+port. The old docker-compose.rust.yml has been replaced by the default stack.
 
 Current validation includes Rust unit/router tests, localhost mock-upstream cache
 tests, Clippy, and Compose structural validation (--no-env-resolution
